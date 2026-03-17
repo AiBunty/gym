@@ -15,7 +15,11 @@ const bebasNeue = Bebas_Neue({
 
 export const metadata: Metadata = {
   title: "Wani's Club Level Up",
-  description: "Dark mode fitness landing page for Wani's Club Level Up.",
+  description: "Your body can do it. It's your mind you need to convince. Train hard, stay consistent, and Level Up — Nashik's premier fitness community.",
+  icons: {
+    icon: "https://i.ibb.co/QBfngyt/Untitled-design-7.png",
+    apple: "https://i.ibb.co/QBfngyt/Untitled-design-7.png",
+  },
 };
 
 export default function RootLayout({
