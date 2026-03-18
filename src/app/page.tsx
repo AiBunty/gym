@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 import { motion } from "framer-motion";
+import FaqChatSection from "./FaqChat";
 import {
   CheckCircle2,
   Clock,
@@ -338,6 +339,9 @@ export default function Home() {
             ))}
           </div>
         </motion.section>
+
+        {/* ── FAQ Chat ── */}
+        <FaqChatSection />
 
         {/* ── Trial Form ── */}
         <TrialForm />
