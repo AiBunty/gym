@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import FaqChatSection from "./FaqChat";
 import {
@@ -48,13 +48,13 @@ const plans = [
   {
     name: "3 Months",
     price: "7,000",
-    features: ["All Gym Access", "Group Classes", "Save ₹500 vs monthly"],
+    features: ["All Gym Access", "Group Classes", "FREE Daily Energy Booster! 🥤", "Save ₹500 vs monthly"],
     highlight: false,
   },
   {
     name: "6 Months",
     price: "13,000",
-    features: ["All Gym Access", "Group Classes", "Personalized Goal Setting", "Best Value for results!"],
+    features: ["All Gym Access", "Group Classes", "FREE Daily Energy Booster! 🥤", "Personalized Goal Setting", "Best Value for results!"],
     highlight: true,
   },
 ];
@@ -64,7 +64,11 @@ const reveal = {
   visible: { opacity: 1, y: 0 },
 };
 
+type Plan = (typeof plans)[number];
+
 export default function Home() {
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-black text-white">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_10%,rgba(255,125,0,0.22),transparent_35%),radial-gradient(circle_at_80%_18%,rgba(255,125,0,0.12),transparent_30%),radial-gradient(circle_at_50%_90%,rgba(148,163,184,0.1),transparent_40%)]" />
@@ -327,6 +331,7 @@ export default function Home() {
                   ))}
                 </ul>
                 <button
+                  onClick={() => setSelectedPlan(plan)}
                   className={`w-full rounded-xl py-3.5 font-bold transition-all ${
                     plan.highlight
                       ? "bg-brand-orange text-black hover:brightness-110"
@@ -372,13 +377,184 @@ export default function Home() {
           <MessageCircle size={22} className="text-white" />
         </a>
       </div>
+
+      <PlanEnquiryModal selectedPlan={selectedPlan} onClose={() => setSelectedPlan(null)} />
+    </div>
+  );
+}
+
+type PlanEnquiryModalProps = {
+  selectedPlan: Plan | null;
+  onClose: () => void;
+};
+
+function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    age: "",
+    gender: "",
+    strengthLevel: "Beginner",
+    notes: "",
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!selectedPlan) return;
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      age: "",
+      gender: "",
+      strengthLevel: "Beginner",
+      notes: "",
+    });
+  }, [selectedPlan]);
+
+  useEffect(() => {
+    if (!selectedPlan) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [selectedPlan]);
+
+  if (!selectedPlan) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    const phone = "919158243377";
+    const msg = encodeURIComponent(
+      `Hi Coach Sayali! 👋\n\nI want to enroll in a membership plan.\n\n*Selected Plan:* ${selectedPlan.name} (₹${selectedPlan.price})\n\n*Customer Details*\nName: ${formData.name}\nEmail: ${formData.email}\nPhone: ${formData.phone}\nAge: ${formData.age}\nGender: ${formData.gender}\nStrength Level: ${formData.strengthLevel}\nImportant Notes: ${formData.notes || "None"}\n\nPlease share the payment link to proceed. Thank you!`
+    );
+
+    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="w-full max-w-xl rounded-3xl border border-[#ff7d00]/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)] sm:p-7"
+      >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-brand-orange">Plan Enquiry</p>
+            <h3 className="mt-1 text-xl font-bold text-white sm:text-2xl">
+              {selectedPlan.name} <span className="text-brand-orange">(₹{selectedPlan.price})</span>
+            </h3>
+            <p className="mt-1 text-sm text-zinc-400">
+              Fill your details. We&apos;ll open WhatsApp so the owner can share the payment link.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
+          >
+            Close
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              required
+              type="text"
+              placeholder="Full Name"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
+            />
+            <input
+              required
+              type="email"
+              placeholder="Email Address"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <input
+              required
+              type="tel"
+              inputMode="numeric"
+              placeholder="Phone Number"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
+            />
+            <input
+              required
+              type="number"
+              min={12}
+              max={90}
+              placeholder="Age"
+              value={formData.age}
+              onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
+            />
+            <select
+              required
+              value={formData.gender}
+              onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
+            >
+              <option value="">Gender</option>
+              <option>Female</option>
+              <option>Male</option>
+              <option>Other</option>
+              <option>Prefer not to say</option>
+            </select>
+          </div>
+
+          <select
+            required
+            value={formData.strengthLevel}
+            onChange={(e) => setFormData({ ...formData, strengthLevel: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
+          >
+            <option>Beginner</option>
+            <option>Intermediate</option>
+            <option>Advanced</option>
+          </select>
+
+          <textarea
+            rows={3}
+            placeholder="Anything important we should know? (injury, medical condition, goals, etc.)"
+            value={formData.notes}
+            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
+          />
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="mt-1 w-full rounded-xl bg-brand-orange py-3.5 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
+          >
+            {isSubmitting ? "Opening WhatsApp..." : "Submit & Request Payment Link"}
+          </button>
+        </form>
+      </motion.div>
     </div>
   );
 }
 
 /* ── Trial Form Component ── */
 function TrialForm() {
-  const [formData, setFormData] = useState({ name: "", goal: "", batch: "Morning (6am–9am)" });
+  const [formData, setFormData] = useState({ name: "", goal: "", batch: "6:00 AM – 7:00 AM" });
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -444,9 +620,18 @@ function TrialForm() {
               className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
               onChange={(e) => setFormData({ ...formData, batch: e.target.value })}
             >
-              <option>Morning (6am–9am)</option>
-              <option>Evening (5pm–8pm)</option>
+              <option>6:00 AM – 7:00 AM</option>
+              <option>7:00 AM – 8:00 AM</option>
+              <option>8:00 AM – 9:00 AM</option>
+              <option>5:00 PM – 6:00 PM</option>
+              <option>7:00 PM – 8:00 PM</option>
             </select>
+            <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+              <span className="mt-0.5 text-base leading-none">⚠️</span>
+              <p className="text-xs leading-relaxed text-red-300">
+                <span className="font-semibold text-red-400">Batch slots are limited!</span> Each batch has a fixed capacity — once full, you&apos;ll be moved to a waitlist and may lose your preferred timing. Secure your spot now before it&apos;s gone!
+              </p>
+            </div>
           </div>
           <button
             type="submit"
