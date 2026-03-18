@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "appscript:login": "cd apps-script && npx clasp login",
+    "appscript:whoami": "cd apps-script && npx clasp show-authorized-user",
+    "appscript:push": "cd apps-script && npx clasp push",
+    "appscript:deploy": "cd apps-script && powershell -ExecutionPolicy Bypass -File ./deploy.ps1"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",

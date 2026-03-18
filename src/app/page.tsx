@@ -4,8 +4,20 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import FaqChatSection from "./FaqChat";
+import TrialOfferFormModal from "@/components/TrialOfferFormModal";
+import {
+  defaultBatchTimings,
+  defaultFeaturedEvent,
+  defaultPlans,
+  type BatchTimings,
+  type FeaturedEvent,
+  type Plan,
+} from "@/lib/cms";
 import {
   CheckCircle2,
+  Gift,
+  Leaf,
+  Megaphone,
   Clock,
   Dumbbell,
   Facebook,
@@ -38,36 +50,93 @@ const pillars = [
   },
 ];
 
-const plans = [
-  {
-    name: "1 Month",
-    price: "2,500",
-    features: ["All Gym Access", "Group Classes", "FREE Daily Energy Booster! 🥤"],
-    highlight: false,
-  },
-  {
-    name: "3 Months",
-    price: "7,000",
-    features: ["All Gym Access", "Group Classes", "FREE Daily Energy Booster! 🥤", "Save ₹500 vs monthly"],
-    highlight: false,
-  },
-  {
-    name: "6 Months",
-    price: "13,000",
-    features: ["All Gym Access", "Group Classes", "FREE Daily Energy Booster! 🥤", "Personalized Goal Setting", "Best Value for results!"],
-    highlight: true,
-  },
-];
-
 const reveal = {
   hidden: { opacity: 0, y: 34 },
   visible: { opacity: 1, y: 0 },
 };
 
-type Plan = (typeof plans)[number];
+type SubmissionPayload = {
+  formType: "trial" | "plan_enquiry" | "weight_loss_program";
+  data: Record<string, string>;
+};
+
+async function submitToGoogleSheets(payload: SubmissionPayload): Promise<void> {
+  try {
+    await fetch("/api/submit", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Form submission to WhatsApp should still continue even if sheet write fails.
+  }
+}
 
 export default function Home() {
+  const [plans, setPlans] = useState<Plan[]>(defaultPlans);
+  const [batchTimings, setBatchTimings] = useState<BatchTimings>(defaultBatchTimings);
+  const [featuredEvent, setFeaturedEvent] = useState<FeaturedEvent>(defaultFeaturedEvent);
+  const [showFeaturedPopup, setShowFeaturedPopup] = useState(false);
+  const [showProgramRegistration, setShowProgramRegistration] = useState(false);
+  const [selectedProgram, setSelectedProgram] = useState<"7 Days" | "10 Days">("7 Days");
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [showLapRegistration, setShowLapRegistration] = useState(false);
+  const [selectedLapProgram, setSelectedLapProgram] = useState<"7 Days" | "10 Days">("7 Days");
+  const [showTrialForm, setShowTrialForm] = useState(false);
+
+  const visiblePlans = plans.filter((plan) => !plan.inactive);
+  const isLapPlan = (plan: Plan) => {
+    const name = (plan.name || "").toLowerCase();
+    const attendance = (plan.attendance || "").toLowerCase();
+    return name.includes("lap") || attendance.includes("lap");
+  };
+  const getLapProgram = (plan: Plan): "7 Days" | "10 Days" => {
+    const content = `${plan.name} ${plan.attendance}`.toLowerCase();
+    return content.includes("10") ? "10 Days" : "7 Days";
+  };
+  const membershipPlans = visiblePlans.filter((plan) => !isLapPlan(plan));
+  const lapPlans = plans.filter((plan) => isLapPlan(plan));
+  const liveLapPlans = lapPlans.filter((plan) => !plan.inactive);
+  const upcomingLapPlans = lapPlans.filter((plan) => Boolean(plan.inactive));
+  const visibleMorningTimings = batchTimings.morning.filter(
+    (_, index) => !batchTimings.inactiveTimings?.morning?.[String(index)]
+  );
+  const visibleEveningTimings = batchTimings.evening.filter(
+    (_, index) => !batchTimings.inactiveTimings?.evening?.[String(index)]
+  );
+
+  useEffect(() => {
+    const loadCmsData = async () => {
+      try {
+        const response = await fetch("/api/cms", { cache: "no-store" });
+        if (!response.ok) return;
+
+        const result = await response.json();
+        if (!result?.ok || !result?.data) return;
+
+        if (Array.isArray(result.data.pricingPlans) && result.data.pricingPlans.length > 0) {
+          setPlans(result.data.pricingPlans);
+        }
+
+        if (result.data.batchTimings) {
+          setBatchTimings(result.data.batchTimings);
+        }
+
+        if (result.data.featuredEvent) {
+          setFeaturedEvent(result.data.featuredEvent);
+          if (result.data.featuredEvent.enabled) {
+            setShowFeaturedPopup(true);
+          }
+        }
+      } catch {
+        // Keep defaults when CMS is unavailable.
+      }
+    };
+
+    loadCmsData();
+  }, []);
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-black text-white">
@@ -158,6 +227,14 @@ export default function Home() {
             </div>
           </div>
         </motion.section>
+
+        <WeightLossAnnouncement
+          eventData={featuredEvent}
+          onRegister={(program) => {
+            setSelectedProgram(program);
+            setShowProgramRegistration(true);
+          }}
+        />
 
         {/* ── Instagram Feed ── */}
         <motion.section
@@ -258,7 +335,7 @@ export default function Home() {
                 <Clock size={20} /> Morning
               </h3>
               <div className="flex flex-wrap justify-center gap-3 text-lg text-white">
-                {["6:00 AM", "7:00 AM", "8:00 AM"].map((t) => (
+                {visibleMorningTimings.map((t) => (
                   <span key={t} className="rounded-lg border border-[#39ff14]/30 bg-[#39ff14]/10 px-4 py-2 font-semibold text-[#39ff14]">
                     {t}
                   </span>
@@ -271,7 +348,7 @@ export default function Home() {
                 <Clock size={20} /> Evening
               </h3>
               <div className="flex flex-wrap justify-center gap-3 text-lg text-white">
-                {["5:00 PM", "7:00 PM"].map((t) => (
+                {visibleEveningTimings.map((t) => (
                   <span key={t} className="rounded-lg border border-[#39ff14]/30 bg-[#39ff14]/10 px-4 py-2 font-semibold text-[#39ff14]">
                     {t}
                   </span>
@@ -282,7 +359,7 @@ export default function Home() {
 
           <div className="mt-6 inline-flex items-center gap-2 italic text-zinc-400">
             <UserCheck size={18} className="text-brand-orange" />
-            <p>Note: 4 PM &amp; 6 PM slots are reserved for Personal Training</p>
+            <p>{batchTimings.note}</p>
           </div>
         </motion.section>
 
@@ -298,9 +375,12 @@ export default function Home() {
           <h2 className="text-center font-display text-3xl uppercase tracking-wide text-white md:text-4xl">
             💎 Membership <span className="text-brand-orange">Plans</span>
           </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-zinc-400 sm:text-base">
+            The first 3 plans are for physical attendance at the gym. Online class has a single dedicated plan at ₹1,800.
+          </p>
 
-          <div className="mt-8 grid gap-6 md:grid-cols-3">
-            {plans.map((plan, index) => (
+          <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {membershipPlans.map((plan, index) => (
               <motion.div
                 key={plan.name}
                 initial={{ opacity: 0, y: 24 }}
@@ -318,6 +398,9 @@ export default function Home() {
                     Best Value
                   </span>
                 )}
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-brand-orange">
+                  {plan.attendance}
+                </p>
                 <h3 className="text-xl font-bold text-white">{plan.name}</h3>
                 <div className="my-4 flex items-baseline gap-1 text-white">
                   <span className="font-display text-4xl text-brand-orange">₹{plan.price}</span>
@@ -343,6 +426,127 @@ export default function Home() {
               </motion.div>
             ))}
           </div>
+        </motion.section>
+
+        {/* ── LAP Program Registration ── */}
+        <motion.section
+          variants={reveal}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="my-12 rounded-3xl border border-brand-orange/30 bg-zinc-900/40 p-8 text-center"
+        >
+          <Leaf className="mx-auto mb-4 text-brand-orange" size={32} />
+          <h2 className="font-display text-3xl uppercase tracking-wide text-white md:text-4xl">
+            🥗 LAP Program <span className="text-brand-orange">Weight Loss</span>
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-slate-gray sm:text-lg">
+            LAP is conducted in sessions. Live sessions open registration, and upcoming sessions are announced here.
+          </p>
+
+          {liveLapPlans.length > 0 ? (
+            <div className="mt-8">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-400">Live: Registration Open</p>
+              <div className="grid gap-6 md:grid-cols-2">
+                {liveLapPlans.map((plan, index) => {
+                  const program = getLapProgram(plan);
+                  const label = program === "10 Days" ? "Best Value" : "Quick Start";
+                  const cardClass = program === "10 Days"
+                    ? "rounded-2xl border border-brand-orange/50 bg-zinc-900/50 p-6 ring-1 ring-brand-orange/20"
+                    : "rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6";
+                  return (
+                    <motion.div
+                      key={`${plan.name}-${index}`}
+                      initial={{ opacity: 0, y: 20 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, amount: 0.3 }}
+                      transition={{ duration: 0.45, delay: index * 0.1 }}
+                      className={cardClass}
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-orange">{label}</p>
+                      <h3 className="mt-2 text-2xl font-bold text-white">{plan.name}</h3>
+                      <div className="my-4 flex items-baseline gap-1">
+                        <span className="font-display text-4xl text-brand-orange">₹{plan.price}</span>
+                      </div>
+                      <ul className="mb-6 space-y-2 text-left text-sm text-zinc-300">
+                        {plan.features.map((feature) => (
+                          <li key={feature} className="flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-brand-orange" />
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        onClick={() => {
+                          setSelectedLapProgram(program);
+                          setShowLapRegistration(true);
+                        }}
+                        className="w-full rounded-xl bg-brand-orange px-4 py-3 font-bold text-black transition hover:brightness-110"
+                      >
+                        Register for {program}
+                      </button>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {upcomingLapPlans.length > 0 ? (
+            <div className="mt-8">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-sky-300">Upcoming LAP Sessions</p>
+              <div className="grid gap-6 md:grid-cols-2">
+                {upcomingLapPlans.map((plan, index) => {
+                  const program = getLapProgram(plan);
+                  return (
+                    <motion.div
+                      key={`upcoming-${plan.name}-${index}`}
+                      initial={{ opacity: 0, y: 20 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, amount: 0.3 }}
+                      transition={{ duration: 0.45, delay: index * 0.1 }}
+                      className="rounded-2xl border border-sky-400/30 bg-zinc-900/40 p-6"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sky-300">Upcoming</p>
+                      <h3 className="mt-2 text-2xl font-bold text-white">{plan.name}</h3>
+                      <div className="my-4 flex items-baseline gap-1">
+                        <span className="font-display text-4xl text-brand-orange">₹{plan.price}</span>
+                      </div>
+                      <ul className="mb-6 space-y-2 text-left text-sm text-zinc-300">
+                        {plan.features.map((feature) => (
+                          <li key={feature} className="flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-brand-orange" />
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        onClick={() => {
+                          setSelectedLapProgram(program);
+                          setShowLapRegistration(true);
+                        }}
+                        className="w-full rounded-xl border border-sky-300 bg-sky-300/10 px-4 py-3 font-bold text-sky-200 transition hover:bg-sky-300/20"
+                      >
+                        Book for Upcoming LAP Session
+                      </button>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {liveLapPlans.length === 0 && upcomingLapPlans.length === 0 ? (
+            <div className="mt-8 rounded-2xl border border-zinc-700 bg-zinc-900/40 p-6">
+              <p className="text-sm text-zinc-200 sm:text-base">
+                Currently no LAP sessions are conducted. Check back soon for new LAP registration.
+              </p>
+              <p className="mt-2 text-xs uppercase tracking-[0.12em] text-zinc-400">
+                No sessions running now
+              </p>
+            </div>
+          ) : null}
         </motion.section>
 
         {/* ── FAQ Chat ── */}
@@ -378,7 +582,527 @@ export default function Home() {
         </a>
       </div>
 
+      <FeaturedEventPopup
+        open={showFeaturedPopup && featuredEvent.enabled}
+        eventData={featuredEvent}
+        onClose={() => setShowFeaturedPopup(false)}
+      />
+
+      <ProgramRegistrationModal
+        open={showProgramRegistration}
+        initialProgram={selectedProgram}
+        eventData={featuredEvent}
+        onClose={() => setShowProgramRegistration(false)}
+      />
+
+      <LapRegistrationModal
+        open={showLapRegistration}
+        initialProgram={selectedLapProgram}
+        onClose={() => setShowLapRegistration(false)}
+      />
+
       <PlanEnquiryModal selectedPlan={selectedPlan} onClose={() => setSelectedPlan(null)} />
+      <TrialOfferFormModal isOpen={showTrialForm} onClose={() => setShowTrialForm(false)} />
+    </div>
+  );
+}
+
+type FeaturedEventPopupProps = {
+  open: boolean;
+  eventData: FeaturedEvent;
+  onClose: () => void;
+};
+
+function FeaturedEventPopup({ open, eventData, onClose }: FeaturedEventPopupProps) {
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/65 px-4 py-6 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 28, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="w-full max-w-2xl rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)] sm:p-7"
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-brand-orange">Featured Offerings</p>
+            <h3 className="mt-1 text-xl font-bold text-white sm:text-2xl">{eventData.title}</h3>
+            {eventData.subtitle ? <p className="mt-2 text-sm text-zinc-300">{eventData.subtitle}</p> : null}
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+            <p className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-brand-orange">
+              <Gift size={15} /> Offerings
+            </p>
+            {eventData.offerings.length > 0 ? (
+              <ul className="space-y-2 text-sm text-zinc-300">
+                {eventData.offerings.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-brand-orange" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-zinc-400">No offerings configured.</p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+            <p className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-brand-orange">
+              <Sparkles size={15} /> Product Features
+            </p>
+            {eventData.products.length > 0 ? (
+              <ul className="space-y-2 text-sm text-zinc-300">
+                {eventData.products.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-brand-orange" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-zinc-400">No product features configured.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 text-right">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-brand-orange px-5 py-2.5 text-sm font-bold text-black transition hover:brightness-110"
+          >
+            {eventData.ctaText || "Explore"}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+type WeightLossAnnouncementProps = {
+  eventData: FeaturedEvent;
+  onRegister: (program: "7 Days" | "10 Days") => void;
+};
+
+function WeightLossAnnouncement({ eventData, onRegister }: WeightLossAnnouncementProps) {
+  if (!eventData.enabled) return null;
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.2 }}
+      transition={{ duration: 0.6, ease: "easeOut" }}
+      className="my-8 rounded-3xl border border-brand-orange/30 bg-zinc-900/40 p-6 sm:p-8"
+    >
+      <div className="mb-6 flex items-center gap-2 text-brand-orange">
+        <Megaphone size={18} />
+        <p className="text-xs font-semibold uppercase tracking-[0.12em]">Announcement</p>
+      </div>
+
+      <h2 className="font-display text-3xl uppercase tracking-wide text-white md:text-4xl">
+        Weight Loss <span className="text-brand-orange">Special Programs</span>
+      </h2>
+      <p className="mt-2 max-w-3xl text-sm text-zinc-300 sm:text-base">
+        7-day and 10-day weight loss programs are available at an additional cost beyond regular membership fees.
+        {eventData.subtitle ? ` ${eventData.subtitle}` : ""}
+      </p>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-orange">Program Option</p>
+          <h3 className="mt-1 text-2xl font-bold text-white">7 Days</h3>
+          <p className="mt-2 text-sm text-zinc-300">Accelerated start for fat-loss momentum with coach accountability.</p>
+          <button
+            type="button"
+            onClick={() => onRegister("7 Days")}
+            className="mt-4 rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-black transition hover:brightness-110"
+          >
+            Register for 7 Days
+          </button>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-orange">Program Option</p>
+          <h3 className="mt-1 text-2xl font-bold text-white">10 Days</h3>
+          <p className="mt-2 text-sm text-zinc-300">Deeper reset with progressive coaching, check-ins and nutrition guidance.</p>
+          <button
+            type="button"
+            onClick={() => onRegister("10 Days")}
+            className="mt-4 rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-black transition hover:brightness-110"
+          >
+            Register for 10 Days
+          </button>
+        </div>
+      </div>
+
+      {(eventData.offerings.length > 0 || eventData.products.length > 0) && (
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-orange">Included in Program</p>
+            <ul className="space-y-2 text-sm text-zinc-300">
+              {eventData.offerings.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-brand-orange" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-orange">Featured Products</p>
+            <ul className="space-y-2 text-sm text-zinc-300">
+              {eventData.products.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-brand-orange" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </motion.section>
+  );
+}
+
+type ProgramRegistrationModalProps = {
+  open: boolean;
+  initialProgram: "7 Days" | "10 Days";
+  eventData: FeaturedEvent;
+  onClose: () => void;
+};
+
+function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: ProgramRegistrationModalProps) {
+  const [formData, setFormData] = useState({
+    name: "",
+    phone: "",
+    goal: "",
+    program: initialProgram,
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setFormData({
+      name: "",
+      phone: "",
+      goal: "",
+      program: initialProgram,
+    });
+  }, [open, initialProgram]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    await submitToGoogleSheets({
+      formType: "weight_loss_program",
+      data: {
+        name: formData.name,
+        phone: formData.phone,
+        goal: formData.goal || "Not specified",
+        program: formData.program,
+        eventTitle: eventData.title || "Weight Loss Program",
+      },
+    });
+
+    const msg = encodeURIComponent(
+      `Hi Coach Sayali! 👋\n\nI want to register for the ${formData.program} Weight Loss Program (additional cost).\n\nName: ${formData.name}\nPhone: ${formData.phone}\nGoal: ${formData.goal || "Not specified"}\n\nPlease share full details and fee structure.`
+    );
+
+    window.open(`https://wa.me/919158243377?text=${msg}`, "_blank");
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 22, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+        className="w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)]"
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-brand-orange">Program Registration</p>
+            <h3 className="mt-1 text-xl font-bold text-white">Weight Loss Program</h3>
+            <p className="mt-1 text-sm text-zinc-300">Additional cost applies over regular membership fee.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
+          >
+            Close
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            required
+            type="text"
+            placeholder="Full Name"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+          />
+
+          <input
+            required
+            type="tel"
+            inputMode="numeric"
+            placeholder="Phone Number"
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+          />
+
+          <select
+            value={formData.program}
+            onChange={(e) => setFormData({ ...formData, program: e.target.value as "7 Days" | "10 Days" })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+          >
+            <option>7 Days</option>
+            <option>10 Days</option>
+          </select>
+
+          <textarea
+            rows={3}
+            placeholder="Your goal (fat loss, inch loss, event prep, etc.)"
+            value={formData.goal}
+            onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+          />
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
+          >
+            {isSubmitting ? "Submitting..." : "Register & Get Full Program Info"}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+type LapRegistrationModalProps = {
+  open: boolean;
+  initialProgram: "7 Days" | "10 Days";
+  onClose: () => void;
+};
+
+function LapRegistrationModal({ open, initialProgram, onClose }: LapRegistrationModalProps) {
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    age: "",
+    goal: "",
+    program: initialProgram,
+    currentWeight: "",
+    targetWeight: "",
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      age: "",
+      goal: "",
+      program: initialProgram,
+      currentWeight: "",
+      targetWeight: "",
+    });
+  }, [open, initialProgram]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    await submitToGoogleSheets({
+      formType: "weight_loss_program",
+      data: {
+        planName: `LAP - ${formData.program}`,
+        planPrice: formData.program === "7 Days" ? "4,999" : "6,999",
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        age: formData.age,
+        goal: formData.goal || "Not specified",
+        program: `LAP ${formData.program}`,
+        currentWeight: formData.currentWeight,
+        targetWeight: formData.targetWeight,
+      },
+    });
+
+    const msg = encodeURIComponent(
+      `Hi Coach Sayali! 👋\n\nI want to register for the *LAP ${formData.program} Program*.\n\n*Personal Details*\nName: ${formData.name}\nEmail: ${formData.email}\nPhone: ${formData.phone}\nAge: ${formData.age}\n\n*Weight Loss Info*\nCurrent Weight: ${formData.currentWeight} kg\nTarget Weight: ${formData.targetWeight} kg\nGoal: ${formData.goal || "Not specified"}\n\nPlease share the full program details, shake options, and fee structure. Thank you!`
+    );
+
+    window.open(`https://wa.me/919158243377?text=${msg}`, "_blank");
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 22, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+        className="w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)]"
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-brand-orange">LAP Program Registration</p>
+            <h3 className="mt-1 text-xl font-bold text-white">
+              LAP - {formData.program}
+              <br />
+              <span className="text-brand-orange">
+                {formData.program === "7 Days" ? "₹4,999" : "₹6,999"}
+              </span>
+            </h3>
+            <p className="mt-1 text-sm text-zinc-300">Meal replacement shakes + personalized diet coaching.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
+          >
+            Close
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              required
+              type="text"
+              placeholder="Full Name"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+            <input
+              required
+              type="email"
+              placeholder="Email Address"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              required
+              type="tel"
+              inputMode="numeric"
+              placeholder="Phone Number"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+            <input
+              required
+              type="number"
+              placeholder="Age"
+              value={formData.age}
+              onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              required
+              type="number"
+              placeholder="Current Weight (kg)"
+              step="0.1"
+              value={formData.currentWeight}
+              onChange={(e) => setFormData({ ...formData, currentWeight: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+            <input
+              required
+              type="number"
+              placeholder="Target Weight (kg)"
+              step="0.1"
+              value={formData.targetWeight}
+              onChange={(e) => setFormData({ ...formData, targetWeight: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+          </div>
+
+          <textarea
+            rows={3}
+            placeholder="Your health goal (weight loss timeline, dietary restrictions, medical conditions, etc.)"
+            value={formData.goal}
+            onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+          />
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
+          >
+            {isSubmitting ? "Submitting..." : "Register for LAP Program"}
+          </button>
+        </form>
+      </motion.div>
     </div>
   );
 }
@@ -424,9 +1148,24 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
 
   if (!selectedPlan) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+
+    await submitToGoogleSheets({
+      formType: "plan_enquiry",
+      data: {
+        planName: selectedPlan.name,
+        planPrice: selectedPlan.price,
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        age: formData.age,
+        gender: formData.gender,
+        strengthLevel: formData.strengthLevel,
+        notes: formData.notes || "None",
+      },
+    });
 
     const phone = "919158243377";
     const msg = encodeURIComponent(
@@ -557,8 +1296,18 @@ function TrialForm() {
   const [formData, setFormData] = useState({ name: "", goal: "", batch: "6:00 AM – 7:00 AM" });
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    await submitToGoogleSheets({
+      formType: "trial",
+      data: {
+        name: formData.name,
+        goal: formData.goal || "Not specified",
+        batch: formData.batch,
+      },
+    });
+
     const phone = "919158243377";
     const msg = encodeURIComponent(
       `Hi Coach Sayali! 🔥\n\nI want to claim my *FREE 2-DAY TRIAL* at Wani's Club Level Up.\n\n*Name:* ${formData.name}\n*Fitness Goal:* ${formData.goal || "Not specified"}\n*Preferred Batch:* ${formData.batch}\n\nSee you at the gym!`
@@ -670,6 +1419,10 @@ function SiteFooter() {
           <h2 className="mb-6 text-3xl font-bold text-white">
             Find <span className="text-brand-orange">Us</span>
           </h2>
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
+            <Leaf size={16} className="text-emerald-300" />
+            Herbalife Authorized Nutrition Club
+          </div>
           <div className="mb-8 space-y-4">
             <p className="flex items-start gap-3 text-zinc-300">
               <MapPin className="mt-1 shrink-0 text-brand-orange" size={18} />
@@ -677,6 +1430,9 @@ function SiteFooter() {
                 101, 1st Floor, Padma Vishwa Orchid, Opp. Mahatma Nagar Cricket
                 Ground, Nashik.
               </span>
+            </p>
+            <p className="text-sm text-zinc-300">
+              Healthy active lifestyle support with guided community nutrition and fitness routines.
             </p>
             <p className="flex items-center gap-3 text-zinc-300">
               <Phone className="shrink-0 text-brand-orange" size={18} />

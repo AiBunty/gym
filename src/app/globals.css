@@ -6,11 +6,70 @@
   --brand-black: #000000;
   --brand-orange: #ff7d00;
   --slate-gray: #94a3b8;
+
+  --theme-bg-page: #050505;
+  --theme-text-primary: #ffffff;
+  --theme-text-muted: #a1a1aa;
+  --theme-bg-black: #000000;
+  --theme-bg-black-soft: rgba(0, 0, 0, 0.2);
+  --theme-surface-950: #09090b;
+  --theme-surface-900: #18181b;
+  --theme-surface-900-soft: rgba(24, 24, 27, 0.3);
+  --theme-surface-800: #27272a;
+  --theme-surface-700: #3f3f46;
+  --theme-border-800: #27272a;
+  --theme-border-900: #18181b;
+  --theme-map-frame: #27272a;
+  --theme-glass-start: rgba(255, 255, 255, 0.12);
+  --theme-glass-end: rgba(255, 255, 255, 0.04);
+  --theme-glass-border: rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="light"] {
+  --brand-black: #f5f7fb;
+  --slate-gray: #475569;
+  --theme-bg-page: #f7fafc;
+  --theme-text-primary: #0f172a;
+  --theme-text-muted: #475569;
+  --theme-bg-black: #f7fafc;
+  --theme-bg-black-soft: rgba(247, 250, 252, 0.72);
+  --theme-surface-950: #ffffff;
+  --theme-surface-900: #eef2f7;
+  --theme-surface-900-soft: rgba(255, 255, 255, 0.82);
+  --theme-surface-800: #e2e8f0;
+  --theme-surface-700: #cbd5e1;
+  --theme-border-800: #dbe3ee;
+  --theme-border-900: #cfd8e3;
+  --theme-map-frame: #dbe3ee;
+  --theme-glass-start: rgba(255, 255, 255, 0.86);
+  --theme-glass-end: rgba(255, 255, 255, 0.64);
+  --theme-glass-border: rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="orange"] {
+  --brand-black: #2c1402;
+  --slate-gray: #ffd5a8;
+  --theme-bg-page: #241100;
+  --theme-text-primary: #fff2df;
+  --theme-text-muted: #ffd2a1;
+  --theme-bg-black: #2c1402;
+  --theme-bg-black-soft: rgba(44, 20, 2, 0.72);
+  --theme-surface-950: #351803;
+  --theme-surface-900: #4a2305;
+  --theme-surface-900-soft: rgba(74, 35, 5, 0.72);
+  --theme-surface-800: #6a3107;
+  --theme-surface-700: #87400d;
+  --theme-border-800: #7c3d12;
+  --theme-border-900: #5f2d09;
+  --theme-map-frame: #7c3d12;
+  --theme-glass-start: rgba(255, 185, 100, 0.2);
+  --theme-glass-end: rgba(95, 45, 9, 0.2);
+  --theme-glass-border: rgba(255, 178, 87, 0.35);
 }
 
 body {
-  background: var(--brand-black);
-  color: #ffffff;
+  background: var(--theme-bg-page);
+  color: var(--theme-text-primary);
   font-family: var(--font-sora), sans-serif;
 }
 
@@ -39,11 +98,11 @@ body {
   .glass-card {
     background: linear-gradient(
       145deg,
-      rgba(255, 255, 255, 0.12),
-      rgba(255, 255, 255, 0.04)
+      var(--theme-glass-start),
+      var(--theme-glass-end)
     );
     backdrop-filter: blur(14px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--theme-glass-border);
     box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
   }
 
@@ -54,6 +113,52 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+.bg-black {
+  background-color: var(--theme-bg-black) !important;
+}
+
+.bg-black\/20 {
+  background-color: var(--theme-bg-black-soft) !important;
+}
+
+.bg-zinc-950 {
+  background-color: var(--theme-surface-950) !important;
+}
+
+.bg-zinc-900 {
+  background-color: var(--theme-surface-900) !important;
+}
+
+.bg-zinc-900\/30 {
+  background-color: var(--theme-surface-900-soft) !important;
+}
+
+.bg-zinc-800 {
+  background-color: var(--theme-surface-800) !important;
+}
+
+.bg-zinc-700 {
+  background-color: var(--theme-surface-700) !important;
+}
+
+.border-zinc-800 {
+  border-color: var(--theme-border-800) !important;
+}
+
+.border-zinc-900 {
+  border-color: var(--theme-border-900) !important;
+}
+
+.text-white {
+  color: var(--theme-text-primary) !important;
+}
+
+.text-zinc-500,
+.text-zinc-400,
+.text-zinc-300 {
+  color: var(--theme-text-muted) !important;
 }
 
 @keyframes blink {

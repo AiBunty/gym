@@ -22,13 +22,33 @@ export const metadata: Metadata = {
   },
 };
 
+export const dynamic = "force-dynamic";
+
+type ThemeName = "dark" | "light" | "orange";
+
+function getThemeForToday(): ThemeName {
+  // Use India time so the daily theme matches local gym operations.
+  const nowInIndia = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
+  const dayOfWeek = nowInIndia.getDay();
+
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return "orange";
+  }
+
+  return nowInIndia.getDate() % 2 === 0 ? "light" : "dark";
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const activeTheme = getThemeForToday();
+
   return (
-    <html lang="en">
+    <html lang="en" data-theme={activeTheme}>
       <head>
         {/* Elfsight Google Reviews widget */}
         <script src="https://elfsightcdn.com/platform.js" async />

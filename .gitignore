@@ -28,6 +28,9 @@ yarn-error.log*
 # local env files
 .env*.local
 
+# local Apps Script binding
+apps-script/.clasp.json
+
 # vercel
 .vercel
 
