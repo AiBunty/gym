@@ -26,12 +26,17 @@ const FAQ_DB = [
   {
     keywords: ["location", "address", "where", "place", "find", "map", "nashik", "mahatma nagar", "directions"],
     answer:
-      "We're right here:\n\n📍 101, 1st Floor, Padma Vishwa Orchid,\nOpp. Mahatma Nagar Cricket Ground, Nashik.\n\nEasy to spot — just opposite the cricket ground in Mahatma Nagar! 🏏",
+      "We're right here:\n\n📍 101, 1st Floor, Padma Vishwa Orchid,\nOpp. Mahatma Nagar Cricket Ground, Nashik.\n\n🗺️ Google Maps: https://www.google.com/maps/search/?api=1&query=Wani%27s+Club+Level+Up+Nashik\n\nEasy to spot — just opposite the cricket ground in Mahatma Nagar! 🏏",
   },
   {
     keywords: ["personal training", "pt", "one on one", "private", "personal coach"],
     answer:
-      "Absolutely! 💪 We offer Personal Training sessions with expert coaches.\n\nPT slots: 4 PM and 6 PM daily.\n\nContact Coach Sayali directly at 📞 9158243377 to schedule your session and discuss your specific goals.",
+      "Absolutely! 💪 We offer Personal Training (PT) with one-on-one coaching.\n\n✅ PT includes:\n• Personalized workout programming\n• Goal-based progress tracking\n• Technique correction and accountability\n• Flexible slot preference (subject to availability)\n\n🕓 Priority PT slots mentioned at the club: 4 PM and 6 PM\n\n💰 PT fee is shown in the PT section/card on our website and may vary based on plan duration or package type.\n\n📲 To book PT, contact Coach Sayali directly: 9158243377",
+  },
+  {
+    keywords: ["lap", "weight loss program", "7 days", "10 days", "lap charges", "shake charges", "combo", "lap registration"],
+    answer:
+      "Great choice! 🥗 LAP is our focused weight-loss program conducted in sessions.\n\n📌 LAP details:\n• Session-based enrollment (Live / Upcoming)\n• 7-day and 10-day formats\n• Includes structured routine, checklist and coaching flow\n\n💰 Pricing is shown in the LAP section as:\n• LAP Charges\n• Shake Charges\n• Or Combo Price (for selected sessions)\n\n⏳ Important: Registration closes before the session start date (cutoff applies per session).\n\n📝 How to join:\n1) Open LAP section on website\n2) Select a live/upcoming session\n3) Click Register and submit details\n\nFor immediate help, message Coach Sayali at 9158243377.",
   },
   {
     keywords: ["class", "classes", "yoga", "zumba", "crossfit", "aerobics", "program", "activity", "workout", "pillar"],
@@ -89,6 +94,8 @@ const SUGGESTIONS = [
   "What are the membership prices?",
   "What are the batch timings?",
   "Do you offer a free trial?",
+  "Tell me about PT plans",
+  "How does LAP work?",
   "Where are you located?",
   "What classes do you offer?",
   "What equipment do you have?",
@@ -242,6 +249,7 @@ export default function FaqChatSection() {
 
   return (
     <motion.section
+      id="chat"
       initial={{ opacity: 0, y: 32 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.15 }}

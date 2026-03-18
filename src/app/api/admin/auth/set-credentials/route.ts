@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminToken } from "@/lib/adminAuth";
+import { verifyAdminToken } from "@/lib/adminAuth";
 
 const getAppsScriptUrls = () => {
   const directUrls = [
@@ -20,13 +20,35 @@ function looksLikeHtml(text: string): boolean {
   return trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html");
 }
 
+type SetCredentialsBody = {
+  token?: string;
+  username?: string;
+  password?: string;
+};
+
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json();
+    const body = (await request.json()) as SetCredentialsBody;
+    const token = String(body.token || "");
+    const username = String(body.username || "").trim();
+    const password = String(body.password || "");
 
-    if (!username || !password) {
+    if (!token) {
+      return NextResponse.json({ ok: false, message: "Token required" }, { status: 401 });
+    }
+
+    const verification = verifyAdminToken(token);
+    if (!verification.ok) {
+      return NextResponse.json({ ok: false, message: verification.message }, { status: 401 });
+    }
+
+    if (!username) {
+      return NextResponse.json({ ok: false, message: "Username is required" }, { status: 400 });
+    }
+
+    if (password.length < 6) {
       return NextResponse.json(
-        { ok: false, message: "Username and password required" },
+        { ok: false, message: "Password must be at least 6 characters" },
         { status: 400 }
       );
     }
@@ -44,15 +66,15 @@ export async function POST(request: NextRequest) {
     for (const appsScriptUrl of appsScriptUrls) {
       try {
         const url = new URL(appsScriptUrl);
-        url.searchParams.set("action", "validateAdmin");
-        url.searchParams.set("username", String(username));
-        url.searchParams.set("password", String(password));
+        url.searchParams.set("action", "setAdminCredentials");
+        url.searchParams.set("username", username);
+        url.searchParams.set("password", password);
 
         const response = await fetch(url.toString(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "validateAdmin",
+            action: "setAdminCredentials",
             username,
             password,
           }),
@@ -60,8 +82,9 @@ export async function POST(request: NextRequest) {
         });
 
         const text = await response.text();
+
         if (!response.ok) {
-          lastError = `Auth endpoint failed with ${response.status}`;
+          lastError = `Credentials endpoint failed with ${response.status}`;
           continue;
         }
 
@@ -79,52 +102,29 @@ export async function POST(request: NextRequest) {
         }
 
         if (!result.ok) {
-          return NextResponse.json(
-            { ok: false, message: result.message || "Invalid username or password" },
-            { status: 401 }
-          );
+          lastError = result.message || "Failed to save admin credentials";
+          continue;
         }
-
-        const token = createAdminToken(username);
 
         return NextResponse.json({
           ok: true,
-          message: "Login successful",
-          token,
+          message: "Admin credentials saved in Google Sheet.",
         });
       } catch (innerError) {
-        lastError = innerError instanceof Error ? innerError.message : "Authentication request failed";
+        lastError = innerError instanceof Error ? innerError.message : "Failed to save admin credentials";
       }
     }
 
-    const fallbackUsername = process.env.ADMIN_FALLBACK_USERNAME || "admin";
-    const fallbackPassword = process.env.ADMIN_FALLBACK_PASSWORD || "admin123";
-    const isFallbackAllowed =
-      String(username).trim() === fallbackUsername &&
-      String(password) === fallbackPassword;
-
-    if (isFallbackAllowed) {
-      const token = createAdminToken(username);
-      return NextResponse.json({
-        ok: true,
-        message: "Login successful (fallback mode)",
-        token,
-      });
-    }
-
-    return NextResponse.json(
-      {
-        ok: false,
-        message: lastError || "Unable to validate admin credentials right now",
-      },
-      {
-        status: 502,
-      }
-    );
+    return NextResponse.json({
+      ok: false,
+      message: lastError || "Failed to save admin credentials",
+    }, {
+      status: 502,
+    });
   } catch (error) {
-    console.error("Auth error:", error);
+    console.error("Set credentials error:", error);
     return NextResponse.json(
-      { ok: false, message: "Server error" },
+      { ok: false, message: error instanceof Error ? error.message : "Server error" },
       { status: 500 }
     );
   }

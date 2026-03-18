@@ -161,6 +161,37 @@ body {
   color: var(--theme-text-muted) !important;
 }
 
+/* Admin-only contrast overrides to improve readability on dark cards */
+.admin-high-contrast [class*="text-zinc-500"] {
+  color: #d4d4d8 !important;
+}
+
+.admin-high-contrast [class*="text-zinc-400"] {
+  color: #e4e4e7 !important;
+}
+
+.admin-high-contrast [class*="text-zinc-300"] {
+  color: #f4f4f5 !important;
+}
+
+.admin-high-contrast [class*="border-zinc-700"] {
+  border-color: #52525b !important;
+}
+
+.admin-high-contrast [class*="bg-zinc-900/40"] {
+  background-color: rgba(24, 24, 27, 0.72) !important;
+}
+
+.admin-high-contrast [class*="bg-black/40"] {
+  background-color: rgba(0, 0, 0, 0.62) !important;
+}
+
+.admin-high-contrast input::placeholder,
+.admin-high-contrast textarea::placeholder {
+  color: #a1a1aa !important;
+  opacity: 1;
+}
+
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }

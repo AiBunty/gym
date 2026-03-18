@@ -2,13 +2,36 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { defaultBatchTimings, defaultFeaturedEvent, defaultPlans, type CmsData, type Plan } from "@/lib/cms";
+import { defaultBatchTimings, defaultEmailSettings, defaultEmailTemplates, defaultFeaturedEvent, defaultLapPlans, defaultPersonalTraining, defaultPlans, type CmsData, type LapPlan, type Plan } from "@/lib/cms";
 import { Plus, Trash2, Save, RefreshCw, Mail, BarChart3, Download, LogOut, ToggleLeft, ToggleRight } from "lucide-react";
 
 const defaultData: CmsData = {
   pricingPlans: defaultPlans,
   batchTimings: defaultBatchTimings,
   featuredEvent: defaultFeaturedEvent,
+  lapPlans: defaultLapPlans,
+  personalTraining: defaultPersonalTraining,
+  emailSettings: defaultEmailSettings,
+  emailTemplates: defaultEmailTemplates,
+};
+
+type CmsSectionKey =
+  | "batchTimings"
+  | "pricingPlans"
+  | "lapPlans"
+  | "personalTraining"
+  | "featuredEvent"
+  | "emailSettings"
+  | "emailTemplates";
+
+const cmsSectionLabels: Record<CmsSectionKey, string> = {
+  batchTimings: "Batch Timings",
+  pricingPlans: "Pricing Plans",
+  lapPlans: "LAP Sessions",
+  personalTraining: "Personal Training",
+  featuredEvent: "Featured Event",
+  emailSettings: "SMTP Settings",
+  emailTemplates: "Email Templates",
 };
 
 export default function AdminPage() {
@@ -18,9 +41,16 @@ export default function AdminPage() {
   
   const [adminKey, setAdminKey] = useState("");
   const [cmsData, setCmsData] = useState<CmsData>(defaultData);
+  const [lastSavedCmsData, setLastSavedCmsData] = useState<CmsData>(defaultData);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isInitializingLapTabs, setIsInitializingLapTabs] = useState(false);
+  const [isSavingCredentials, setIsSavingCredentials] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [cmsUsingDefaults, setCmsUsingDefaults] = useState(false);
+  const [newAdminUsername, setNewAdminUsername] = useState("admin");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [confirmAdminPassword, setConfirmAdminPassword] = useState("");
 
   // Check authentication on mount
   useEffect(() => {
@@ -70,13 +100,25 @@ export default function AdminPage() {
       const response = await fetch("/api/cms", { cache: "no-store" });
       const result = await response.json();
 
-      if (result?.ok && result?.data) {
+      setCmsUsingDefaults(Boolean(result?.usingDefaults));
+
+      if (result?.data) {
         setCmsData(result.data as CmsData);
-        setStatusMessage("CMS loaded successfully.");
+        setLastSavedCmsData(result.data as CmsData);
+      }
+
+      if (result?.ok && result?.data) {
+        setStatusMessage(
+          result?.usingDefaults
+            ? "Google Sheet CMS tab is empty. Showing code defaults. Enter admin key and click Seed CMS Sheet."
+            : "CMS loaded successfully from Google Sheet."
+        );
       } else {
+        setCmsUsingDefaults(true);
         setStatusMessage(result?.message || "Unable to load CMS data. Using defaults.");
       }
     } catch {
+      setCmsUsingDefaults(true);
       setStatusMessage("Unable to load CMS data. Using defaults.");
     } finally {
       setIsLoading(false);
@@ -87,9 +129,24 @@ export default function AdminPage() {
     loadCms();
   }, [loadCms]);
 
-  const saveCms = async () => {
-    if (!adminKey.trim()) {
-      setStatusMessage("Enter admin key before saving.");
+  const getSectionData = (data: CmsData, section: CmsSectionKey) => data[section];
+
+  const hasUnsavedSection = (section: CmsSectionKey) => {
+    return JSON.stringify(getSectionData(cmsData, section)) !== JSON.stringify(getSectionData(lastSavedCmsData, section));
+  };
+
+  const saveCms = async (section?: CmsSectionKey) => {
+    if (section && !hasUnsavedSection(section)) {
+      setStatusMessage(`${cmsSectionLabels[section]} has no unsaved changes.`);
+      return;
+    }
+
+    if (!token && !adminKey.trim()) {
+      setStatusMessage(
+        section
+          ? `${cmsSectionLabels[section]} not saved. Enter admin key or login again.`
+          : "Enter admin key or login again before saving."
+      );
       return;
     }
 
@@ -104,6 +161,7 @@ export default function AdminPage() {
         },
         body: JSON.stringify({
           adminKey,
+          token,
           data: cmsData,
         }),
       });
@@ -111,15 +169,72 @@ export default function AdminPage() {
       const result = await response.json();
 
       if (!response.ok || !result?.ok) {
-        setStatusMessage(result?.message || "Save failed.");
+        setStatusMessage(section ? `${cmsSectionLabels[section]} not saved. ${result?.message || "Save failed."}` : result?.message || "Save failed.");
         return;
       }
 
-      setStatusMessage("Saved to Google Sheet via Apps Script.");
+      setCmsUsingDefaults(false);
+      setLastSavedCmsData(cmsData);
+      if (section) {
+        setStatusMessage(`${cmsSectionLabels[section]} saved to Google Sheet.`);
+      } else {
+        setStatusMessage(cmsUsingDefaults ? "Default CMS values saved to Google Sheet." : "Saved to Google Sheet via Apps Script.");
+      }
     } catch {
-      setStatusMessage("Save failed due to network error.");
+      setStatusMessage(section ? `${cmsSectionLabels[section]} not saved due to network error.` : "Save failed due to network error.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const saveAdminCredentials = async () => {
+    if (!newAdminUsername.trim()) {
+      setStatusMessage("Enter admin username.");
+      return;
+    }
+
+    if (newAdminPassword.length < 6) {
+      setStatusMessage("Admin password must be at least 6 characters.");
+      return;
+    }
+
+    if (newAdminPassword !== confirmAdminPassword) {
+      setStatusMessage("Password and confirm password do not match.");
+      return;
+    }
+
+    if (!token) {
+      setStatusMessage("Session expired. Please login again.");
+      return;
+    }
+
+    setIsSavingCredentials(true);
+    setStatusMessage("");
+
+    try {
+      const response = await fetch("/api/admin/auth/set-credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          username: newAdminUsername.trim(),
+          password: newAdminPassword,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result?.ok) {
+        setStatusMessage(result?.message || "Failed to save admin credentials.");
+        return;
+      }
+
+      setNewAdminPassword("");
+      setConfirmAdminPassword("");
+      setStatusMessage("Admin credentials saved in Google Sheet.");
+    } catch {
+      setStatusMessage("Failed to save admin credentials.");
+    } finally {
+      setIsSavingCredentials(false);
     }
   };
 
@@ -186,8 +301,89 @@ export default function AdminPage() {
     }));
   };
 
+  const updateLapPlan = (index: number, patch: Partial<LapPlan>) => {
+    setCmsData((prev) => ({
+      ...prev,
+      lapPlans: (prev.lapPlans || []).map((plan, i) => (i === index ? { ...plan, ...patch } : plan)),
+    }));
+  };
+
+  const addLapPlan = () => {
+    setCmsData((prev) => ({
+      ...prev,
+      lapPlans: [
+        ...(prev.lapPlans || []),
+        {
+          title: "LAP New Session",
+          startDate: "",
+          endDate: "",
+          registrationCutoffHours: 6,
+          numberOfDays: 7,
+          lapCharges: "0",
+          shakeCharges: "0",
+          pricingMode: "separate",
+          comboPrice: "0",
+          description: "",
+          activities: ["Registration form"],
+          dailyChecklist: ["Follow diet"],
+          registrationFormEnabled: true,
+          status: "upcoming",
+        },
+      ],
+    }));
+  };
+
+  const removeLapPlan = (index: number) => {
+    setCmsData((prev) => ({
+      ...prev,
+      lapPlans: (prev.lapPlans || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const calculateLapEndDate = (startDate: string, numberOfDays: number): string => {
+    if (!startDate || !numberOfDays || numberOfDays < 1) return "";
+
+    const start = new Date(`${startDate}T00:00:00`);
+    if (Number.isNaN(start.getTime())) return "";
+
+    start.setDate(start.getDate() + (numberOfDays - 1));
+    const year = start.getFullYear();
+    const month = String(start.getMonth() + 1).padStart(2, "0");
+    const day = String(start.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const updateLapStartDate = (index: number, startDate: string) => {
+    setCmsData((prev) => ({
+      ...prev,
+      lapPlans: (prev.lapPlans || []).map((plan, i) => {
+        if (i !== index) return plan;
+        return {
+          ...plan,
+          startDate,
+          endDate: calculateLapEndDate(startDate, Number(plan.numberOfDays || 0)),
+        };
+      }),
+    }));
+  };
+
+  const updateLapNumberOfDays = (index: number, numberOfDays: number) => {
+    const safeDays = Math.max(1, numberOfDays || 1);
+    setCmsData((prev) => ({
+      ...prev,
+      lapPlans: (prev.lapPlans || []).map((plan, i) => {
+        if (i !== index) return plan;
+        return {
+          ...plan,
+          numberOfDays: safeDays,
+          endDate: calculateLapEndDate(plan.startDate, safeDays),
+        };
+      }),
+    }));
+  };
+
   // Reports & Email State
-  const [activeTab, setActiveTab] = useState<"cms" | "reports" | "trial" | "payment" | "email">("cms");
+  const [activeTab, setActiveTab] = useState<"cms" | "reports" | "trial" | "payment" | "pt" | "email">("cms");
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
   const [dateRangeStart, setDateRangeStart] = useState("");
@@ -205,19 +401,80 @@ export default function AdminPage() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentDateRangeStart, setPaymentDateRangeStart] = useState("");
   const [paymentDateRangeEnd, setPaymentDateRangeEnd] = useState("");
+
+  // Personal Training Users State
+  const [ptUsers, setPtUsers] = useState<any[]>([]);
+  const [ptLoading, setPtLoading] = useState(false);
   
   // Email State
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
+  const [emailHtmlBody, setEmailHtmlBody] = useState("");
   const [emailRecipients, setEmailRecipients] = useState<string[]>([]);
   const [emailSending, setEmailSending] = useState(false);
   const [emailAllSelected, setEmailAllSelected] = useState(false);
   const [emailAudienceSource, setEmailAudienceSource] = useState<"trial" | "payment" | "all">("all");
+  const [smtpTestEmail, setSmtpTestEmail] = useState("");
+  const [smtpTestLoading, setSmtpTestLoading] = useState(false);
+  const [smtpDiagnostics, setSmtpDiagnostics] = useState<string>("");
+  const [selectedManualTemplatePreset, setSelectedManualTemplatePreset] = useState<"trial" | "plan_enquiry" | "lap">("trial");
 
   useEffect(() => {
     setEmailRecipients([]);
     setEmailAllSelected(false);
   }, [emailAudienceSource]);
+
+  const applySmtpProviderDefaults = (provider: "gmail" | "zoho" | "stackmail" | "yahoo" | "titan" | "custom") => {
+    const defaults = {
+      gmail: { host: "smtp.gmail.com", port: 587, secure: false },
+      zoho: { host: "smtp.zoho.com", port: 587, secure: false },
+      stackmail: { host: "smtp.stackmail.com", port: 587, secure: false },
+      yahoo: { host: "smtp.mail.yahoo.com", port: 587, secure: false },
+      titan: { host: "smtp.titan.email", port: 587, secure: false },
+      custom: { host: "", port: 587, secure: false },
+    }[provider];
+
+    setCmsData((prev) => ({
+      ...prev,
+      emailSettings: {
+        ...prev.emailSettings,
+        provider,
+        host: defaults.host,
+        port: defaults.port,
+        secure: defaults.secure,
+      },
+    }));
+  };
+
+  const initializeLapTabs = async () => {
+    if (!token) {
+      setStatusMessage("Session expired. Please login again.");
+      return;
+    }
+
+    setIsInitializingLapTabs(true);
+    setStatusMessage("");
+
+    try {
+      const response = await fetch("/api/admin/initialize-lap-tabs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result?.ok) {
+        setStatusMessage(result?.message || "Failed to initialize LAP tabs.");
+        return;
+      }
+
+      setStatusMessage("LAP tabs initialized successfully in Google Sheets.");
+    } catch {
+      setStatusMessage("Failed to initialize LAP tabs.");
+    } finally {
+      setIsInitializingLapTabs(false);
+    }
+  };
 
   const fetchRegistrations = async () => {
     if (!adminKey.trim()) {
@@ -382,8 +639,8 @@ export default function AdminPage() {
       setStatusMessage("Select at least one recipient.");
       return;
     }
-    if (!emailSubject.trim() || !emailBody.trim()) {
-      setStatusMessage("Enter subject and message body.");
+    if (!emailSubject.trim() || (!emailBody.trim() && !emailHtmlBody.trim())) {
+      setStatusMessage("Enter subject and message body/html.");
       return;
     }
     
@@ -400,6 +657,7 @@ export default function AdminPage() {
           recipientEmails: emailRecipients,
           subject: emailSubject,
           message: emailBody,
+          html: emailHtmlBody,
         }),
       });
       
@@ -408,6 +666,7 @@ export default function AdminPage() {
         setStatusMessage(`Email sent to ${emailRecipients.length} recipients.`);
         setEmailSubject("");
         setEmailBody("");
+        setEmailHtmlBody("");
         setEmailRecipients([]);
         setEmailAllSelected(false);
       } else {
@@ -446,7 +705,7 @@ export default function AdminPage() {
     }
   };
 
-  const filterTrialUsers = () => {
+  function filterTrialUsers() {
     let filtered = trialUsers;
     
     if (trialDateRangeStart || trialDateRangeEnd) {
@@ -459,7 +718,7 @@ export default function AdminPage() {
     }
     
     return filtered;
-  };
+  }
 
   const deleteTrialUser = async (rowIndex: number) => {
     if (!confirm("Are you sure you want to delete this trial user?")) return;
@@ -513,7 +772,124 @@ export default function AdminPage() {
     }
   };
 
-  const filterPaymentUsers = () => {
+  const fetchPtUsers = async () => {
+    setPtLoading(true);
+    setStatusMessage("");
+
+    try {
+      const response = await fetch("/api/admin/personal-training-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+
+      const result = await response.json();
+      if (result?.ok && result?.data?.users) {
+        setPtUsers(result.data.users);
+        setStatusMessage(`Loaded ${result.data.users.length} PT leads.`);
+      } else {
+        setStatusMessage(result?.message || "Failed to load PT leads.");
+      }
+    } catch {
+      setStatusMessage("Failed to fetch PT leads.");
+    } finally {
+      setPtLoading(false);
+    }
+  };
+
+  const deletePtUser = async (rowIndex: number) => {
+    if (!confirm("Are you sure you want to delete this PT lead?")) return;
+
+    try {
+      const response = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          sheetName: "Personal Training",
+          rowIndex,
+        }),
+      });
+
+      const result = await response.json();
+      if (result?.ok) {
+        setPtUsers(ptUsers.filter((u) => u.rowIndex !== rowIndex));
+        setStatusMessage("PT lead deleted.");
+      } else {
+        setStatusMessage("Failed to delete PT lead.");
+      }
+    } catch {
+      setStatusMessage("Error deleting PT lead.");
+    }
+  };
+
+  const applyManualTemplatePreset = () => {
+    const presets: Record<"trial" | "plan_enquiry" | "lap", { subject: string; text: string; html: string }> = {
+      trial: {
+        subject: "Your 2-Day Trial Booking Confirmation - Wani's Club Level Up",
+        text: "Hi {{name}}, your 2-Day Trial is confirmed. Batch: {{batch}}. We are excited to welcome you!",
+        html: "<div style=\"font-family:Arial,sans-serif;padding:16px\"><h2>Hi {{name}}, your 2-Day Trial is confirmed</h2><p><b>Batch:</b> {{batch}}</p><p>See you at Wani's Club Level Up.</p></div>",
+      },
+      plan_enquiry: {
+        subject: "Membership Enquiry Received - {{planName}}",
+        text: "Hi {{name}}, we received your enquiry for {{planName}} ({{planPrice}}). Our team will contact you shortly with payment details.",
+        html: "<div style=\"font-family:Arial,sans-serif;padding:16px\"><h2>Thanks {{name}}</h2><p>We received your enquiry for <b>{{planName}}</b> ({{planPrice}}).</p><p>We will send payment details shortly.</p></div>",
+      },
+      lap: {
+        subject: "LAP Registration Update - {{planName}}",
+        text: "Hi {{name}}, your LAP registration for {{planName}} is received. Start date: {{submittedAt}}. We will share onboarding steps on WhatsApp.",
+        html: "<div style=\"font-family:Arial,sans-serif;padding:16px\"><h2>LAP Registration Received</h2><p>Hi {{name}}, we have received your registration for <b>{{planName}}</b>.</p><p>Our coach will share onboarding steps shortly.</p></div>",
+      },
+    };
+
+    const selected = presets[selectedManualTemplatePreset];
+    setEmailSubject(selected.subject);
+    setEmailBody(selected.text);
+    setEmailHtmlBody(selected.html);
+    setStatusMessage(`Applied ${selectedManualTemplatePreset.toUpperCase()} starter template.`);
+  };
+
+  const runSmtpTest = async () => {
+    if (!smtpTestEmail.trim()) {
+      setStatusMessage("Enter a recipient email for SMTP test.");
+      return;
+    }
+
+    setSmtpTestLoading(true);
+    setSmtpDiagnostics("");
+    setStatusMessage("");
+
+    try {
+      const response = await fetch("/api/admin/test-smtp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          toEmail: smtpTestEmail.trim(),
+          smtp: cmsData.emailSettings,
+          subject: emailSubject || "SMTP Test - Wani's Club Level Up",
+          text: emailBody || "This is a test SMTP message from admin panel.",
+          html: emailHtmlBody || "",
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result?.ok) {
+        setStatusMessage(result?.message || "SMTP test failed.");
+        setSmtpDiagnostics(JSON.stringify(result?.diagnostics || {}, null, 2));
+        return;
+      }
+
+      setStatusMessage("SMTP test sent successfully.");
+      setSmtpDiagnostics(JSON.stringify(result?.diagnostics || {}, null, 2));
+    } catch {
+      setStatusMessage("SMTP test failed due to network error.");
+    } finally {
+      setSmtpTestLoading(false);
+    }
+  };
+
+  function filterPaymentUsers() {
     let filtered = paymentUsers;
     
     if (paymentDateRangeStart || paymentDateRangeEnd) {
@@ -526,7 +902,7 @@ export default function AdminPage() {
     }
     
     return filtered;
-  };
+  }
 
   const deletePaymentUser = async (rowIndex: number) => {
     if (!confirm("Are you sure you want to delete this payment user?")) return;
@@ -594,7 +970,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8 text-white sm:px-6 lg:px-8">
+    <main className="admin-high-contrast min-h-screen bg-zinc-950 px-4 py-8 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-8">
         <header className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
           <div className="flex items-start justify-between mb-4">
@@ -612,7 +988,7 @@ export default function AdminPage() {
             </button>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
             <input
               type="password"
               placeholder="Enter admin key"
@@ -632,11 +1008,64 @@ export default function AdminPage() {
 
             <button
               type="button"
-              onClick={saveCms}
+              onClick={() => saveCms()}
               disabled={isSaving}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-70"
             >
-              <Save size={16} /> {isSaving ? "Saving..." : "Save Changes"}
+              <Save size={16} /> {isSaving ? "Saving..." : cmsUsingDefaults ? "Seed CMS Sheet" : "Save Changes"}
+            </button>
+
+            <button
+              type="button"
+              onClick={initializeLapTabs}
+              disabled={isInitializingLapTabs}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-orange/70 bg-transparent px-4 py-2.5 text-sm font-semibold text-brand-orange transition hover:bg-brand-orange/10 disabled:opacity-70"
+            >
+              {isInitializingLapTabs ? "Initializing..." : "Initialize LAP Tabs"}
+            </button>
+          </div>
+
+          {cmsUsingDefaults ? (
+            <p className="mt-3 text-xs text-amber-300">
+              The website is currently using built-in CMS defaults from code. The Google Sheet CMS tab will stay empty until you enter the admin key and click `Seed CMS Sheet`.
+            </p>
+          ) : null}
+
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
+            <p className="text-sm font-semibold text-zinc-200">Admin Login Credentials (Google Sheet)</p>
+            <p className="mt-1 text-xs text-zinc-400">Update username/password stored in Admin Credentials sheet.</p>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <input
+                type="text"
+                placeholder="New username"
+                value={newAdminUsername}
+                onChange={(e) => setNewAdminUsername(e.target.value)}
+                className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+              />
+              <input
+                type="password"
+                placeholder="New password"
+                value={newAdminPassword}
+                onChange={(e) => setNewAdminPassword(e.target.value)}
+                className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+              />
+              <input
+                type="password"
+                placeholder="Confirm password"
+                value={confirmAdminPassword}
+                onChange={(e) => setConfirmAdminPassword(e.target.value)}
+                className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={saveAdminCredentials}
+              disabled={isSavingCredentials}
+              className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-100 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-white disabled:opacity-70"
+            >
+              <Save size={16} /> {isSavingCredentials ? "Saving credentials..." : "Save Admin Credentials"}
             </button>
           </div>
 
@@ -683,6 +1112,19 @@ export default function AdminPage() {
           </button>
           <button
             onClick={() => {
+              setActiveTab("pt");
+              if (ptUsers.length === 0) fetchPtUsers();
+            }}
+            className={`inline-flex items-center gap-2 px-4 py-3 font-semibold text-sm uppercase whitespace-nowrap transition ${
+              activeTab === "pt"
+                ? "border-b-2 border-brand-orange text-brand-orange"
+                : "text-zinc-400 hover:text-white"
+            }`}
+          >
+            <BarChart3 size={16} /> PT Leads
+          </button>
+          <button
+            onClick={() => {
               setActiveTab("reports");
               if (registrations.length === 0) fetchRegistrations();
             }}
@@ -710,7 +1152,18 @@ export default function AdminPage() {
         {activeTab === "cms" && (
           <div className="space-y-8">
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-          <h2 className="font-display text-2xl uppercase tracking-wide">Batch Timings</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-2xl uppercase tracking-wide">Batch Timings</h2>
+            <button
+              type="button"
+              onClick={() => saveCms("batchTimings")}
+              disabled={isSaving || !hasUnsavedSection("batchTimings")}
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+            >
+              <Save size={14} /> {isSaving ? "Saving..." : "Save Timings"}
+            </button>
+          </div>
+          {hasUnsavedSection("batchTimings") ? <p className="mt-2 text-xs text-amber-300">Unsaved changes in Batch Timings.</p> : null}
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs uppercase tracking-[0.08em] text-zinc-400">Morning Timings (comma separated)</label>
@@ -721,10 +1174,7 @@ export default function AdminPage() {
                     ...prev,
                     batchTimings: {
                       ...prev.batchTimings,
-                      morning: e.target.value
-                        .split(",")
-                        .map((item) => item.trim())
-                        .filter(Boolean),
+                      morning: e.target.value.split(","),
                     },
                   }))
                 }
@@ -741,10 +1191,7 @@ export default function AdminPage() {
                     ...prev,
                     batchTimings: {
                       ...prev.batchTimings,
-                      evening: e.target.value
-                        .split(",")
-                        .map((item) => item.trim())
-                        .filter(Boolean),
+                      evening: e.target.value.split(","),
                     },
                   }))
                 }
@@ -822,18 +1269,29 @@ export default function AdminPage() {
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-display text-2xl uppercase tracking-wide">Pricing Plans</h2>
-            <button
-              type="button"
-              onClick={addPlan}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110"
-            >
-              <Plus size={16} /> Add Plan
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => saveCms("pricingPlans")}
+                disabled={isSaving || !hasUnsavedSection("pricingPlans")}
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+              >
+                <Save size={14} /> {isSaving ? "Saving..." : "Save Plans"}
+              </button>
+              <button
+                type="button"
+                onClick={addPlan}
+                className="inline-flex items-center gap-2 rounded-xl bg-zinc-800 px-3 py-2 text-sm font-semibold transition hover:bg-zinc-700"
+              >
+                <Plus size={16} /> Add Plan
+              </button>
+            </div>
           </div>
+          {hasUnsavedSection("pricingPlans") ? <p className="mt-2 text-xs text-amber-300">Unsaved changes in Pricing Plans.</p> : null}
 
           <div className="mt-4 space-y-4">
             {cmsData.pricingPlans.map((plan, index) => (
-              <article key={`${plan.name}-${index}`} className="rounded-2xl border border-zinc-800 bg-black/40 p-4">
+              <article key={`plan-${index}`} className="rounded-2xl border border-zinc-800 bg-black/40 p-4">
                 <div className="grid gap-3 sm:grid-cols-4">
                   <input
                     value={plan.name}
@@ -917,7 +1375,320 @@ export default function AdminPage() {
         </section>
 
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-          <h2 className="font-display text-2xl uppercase tracking-wide">Featured Event</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-2xl uppercase tracking-wide">LAP Sessions</h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => saveCms("lapPlans")}
+                disabled={isSaving || !hasUnsavedSection("lapPlans")}
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+              >
+                <Save size={14} /> {isSaving ? "Saving..." : "Save LAP"}
+              </button>
+              <button
+                type="button"
+                onClick={addLapPlan}
+                className="inline-flex items-center gap-2 rounded-xl bg-zinc-800 px-3 py-2 text-sm font-semibold transition hover:bg-zinc-700"
+              >
+                <Plus size={16} /> Add LAP Session
+              </button>
+            </div>
+          </div>
+          {hasUnsavedSection("lapPlans") ? <p className="mt-2 text-xs text-amber-300">Unsaved changes in LAP Sessions.</p> : null}
+
+          <p className="mt-2 text-xs text-zinc-400">
+            Configure LAP start/end date, number of days, LAP and shake charges, combo/separate pricing, and daily activity details.
+          </p>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {(cmsData.lapPlans || []).map((plan, index) => (
+              <article key={`${plan.title}-${index}`} className="h-full rounded-2xl border border-zinc-800 bg-black/40 p-4">
+                <div className="grid gap-3 sm:grid-cols-4">
+                  <input
+                    value={plan.title}
+                    onChange={(e) => updateLapPlan(index, { title: e.target.value })}
+                    placeholder="LAP Session Title"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={String(plan.numberOfDays ?? 1)}
+                    onChange={(e) => updateLapNumberOfDays(index, Number(e.target.value || 1))}
+                    placeholder="No. of Days"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <input
+                    type="date"
+                    value={plan.startDate}
+                    onChange={(e) => updateLapStartDate(index, e.target.value)}
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <input
+                    type="date"
+                    value={plan.endDate}
+                    readOnly
+                    className="rounded-xl border border-zinc-700 bg-zinc-900/30 px-3 py-2.5 text-sm text-white outline-none"
+                  />
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                  <input
+                    value={plan.lapCharges}
+                    onChange={(e) => updateLapPlan(index, { lapCharges: e.target.value })}
+                    placeholder="LAP Charges"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <input
+                    value={plan.shakeCharges}
+                    onChange={(e) => updateLapPlan(index, { shakeCharges: e.target.value })}
+                    placeholder="Shake Charges"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <input
+                    value={plan.comboPrice}
+                    onChange={(e) => updateLapPlan(index, { comboPrice: e.target.value })}
+                    placeholder="Combo Price"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={String(plan.registrationCutoffHours ?? 6)}
+                    onChange={(e) =>
+                      updateLapPlan(index, {
+                        registrationCutoffHours: Math.max(1, Number(e.target.value || 6)),
+                      })
+                    }
+                    placeholder="Cutoff Hours"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <select
+                    value={plan.pricingMode}
+                    onChange={(e) => updateLapPlan(index, { pricingMode: e.target.value === "combo" ? "combo" : "separate" })}
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  >
+                    <option value="separate">Show Separate (LAP + Shake)</option>
+                    <option value="combo">Show Combo Option</option>
+                  </select>
+
+                  <select
+                    value={plan.status}
+                    onChange={(e) => updateLapPlan(index, { status: e.target.value === "live" ? "live" : "upcoming" })}
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  >
+                    <option value="live">Live</option>
+                    <option value="upcoming">Upcoming</option>
+                  </select>
+
+                  <label className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-3 py-2.5 text-sm text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(plan.registrationFormEnabled)}
+                      onChange={(e) => updateLapPlan(index, { registrationFormEnabled: e.target.checked })}
+                    />
+                    Registration Form Enabled
+                  </label>
+                </div>
+
+                <p className="mt-2 text-xs text-zinc-400">
+                  Registrations close {String(plan.registrationCutoffHours ?? 6)} hours before start date.
+                </p>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <textarea
+                    rows={4}
+                    value={plan.description}
+                    onChange={(e) => updateLapPlan(index, { description: e.target.value })}
+                    placeholder="Description"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <textarea
+                    rows={4}
+                    value={(plan.activities || []).join("\n")}
+                    onChange={(e) =>
+                      updateLapPlan(index, {
+                        activities: e.target.value.split("\n"),
+                      })
+                    }
+                    placeholder="Activities (one per line)"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <textarea
+                    rows={4}
+                    value={(plan.dailyChecklist || []).join("\n")}
+                    onChange={(e) =>
+                      updateLapPlan(index, {
+                        dailyChecklist: e.target.value.split("\n"),
+                      })
+                    }
+                    placeholder="Daily checklist (one per line)"
+                    className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() => removeLapPlan(index)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-red-600/80 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
+                    >
+                      <Trash2 size={14} /> Remove LAP Session
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-2xl uppercase tracking-wide">Personal Training Section</h2>
+            <button
+              type="button"
+              onClick={() => saveCms("personalTraining")}
+              disabled={isSaving || !hasUnsavedSection("personalTraining")}
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+            >
+              <Save size={14} /> {isSaving ? "Saving..." : "Save PT"}
+            </button>
+          </div>
+          {hasUnsavedSection("personalTraining") ? <p className="mt-2 text-xs text-amber-300">Unsaved changes in Personal Training.</p> : null}
+          <p className="mt-2 text-xs text-zinc-400">
+            Configure the Personal Training card content shown on homepage and lead form defaults.
+          </p>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-3 py-2.5 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={Boolean(cmsData.personalTraining.enabled)}
+                onChange={(e) =>
+                  setCmsData((prev) => ({
+                    ...prev,
+                    personalTraining: {
+                      ...prev.personalTraining,
+                      enabled: e.target.checked,
+                    },
+                  }))
+                }
+              />
+              PT Card Enabled
+            </label>
+            <input
+              value={cmsData.personalTraining.price}
+              onChange={(e) =>
+                setCmsData((prev) => ({
+                  ...prev,
+                  personalTraining: {
+                    ...prev.personalTraining,
+                    price: e.target.value,
+                  },
+                }))
+              }
+              placeholder="Price (e.g. 8000)"
+              className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <input
+              value={cmsData.personalTraining.title}
+              onChange={(e) =>
+                setCmsData((prev) => ({
+                  ...prev,
+                  personalTraining: {
+                    ...prev.personalTraining,
+                    title: e.target.value,
+                  },
+                }))
+              }
+              placeholder="PT Title"
+              className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+            <input
+              value={cmsData.personalTraining.ctaText}
+              onChange={(e) =>
+                setCmsData((prev) => ({
+                  ...prev,
+                  personalTraining: {
+                    ...prev.personalTraining,
+                    ctaText: e.target.value,
+                  },
+                }))
+              }
+              placeholder="CTA Text"
+              className="rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+          </div>
+
+          <div className="mt-3 space-y-3">
+            <input
+              value={cmsData.personalTraining.imageUrl}
+              onChange={(e) =>
+                setCmsData((prev) => ({
+                  ...prev,
+                  personalTraining: {
+                    ...prev.personalTraining,
+                    imageUrl: e.target.value,
+                  },
+                }))
+              }
+              placeholder="Demo Image URL"
+              className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+            <textarea
+              rows={3}
+              value={cmsData.personalTraining.description}
+              onChange={(e) =>
+                setCmsData((prev) => ({
+                  ...prev,
+                  personalTraining: {
+                    ...prev.personalTraining,
+                    description: e.target.value,
+                  },
+                }))
+              }
+              placeholder="PT description"
+              className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+            <textarea
+              rows={4}
+              value={(cmsData.personalTraining.features || []).join("\n")}
+              onChange={(e) =>
+                setCmsData((prev) => ({
+                  ...prev,
+                  personalTraining: {
+                    ...prev.personalTraining,
+                    features: e.target.value.split("\n"),
+                  },
+                }))
+              }
+              placeholder="Features (one per line)"
+              className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-2xl uppercase tracking-wide">Featured Event</h2>
+            <button
+              type="button"
+              onClick={() => saveCms("featuredEvent")}
+              disabled={isSaving || !hasUnsavedSection("featuredEvent")}
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+            >
+              <Save size={14} /> {isSaving ? "Saving..." : "Save Event"}
+            </button>
+          </div>
+          {hasUnsavedSection("featuredEvent") ? <p className="mt-2 text-xs text-amber-300">Unsaved changes in Featured Event.</p> : null}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-3 py-2.5 text-sm text-zinc-300">
@@ -994,10 +1765,7 @@ export default function AdminPage() {
                   ...prev,
                   featuredEvent: {
                     ...prev.featuredEvent,
-                    offerings: e.target.value
-                      .split("\n")
-                      .map((item) => item.trim())
-                      .filter(Boolean),
+                    offerings: e.target.value.split("\n"),
                   },
                 }))
               }
@@ -1013,10 +1781,7 @@ export default function AdminPage() {
                   ...prev,
                   featuredEvent: {
                     ...prev.featuredEvent,
-                    products: e.target.value
-                      .split("\n")
-                      .map((item) => item.trim())
-                      .filter(Boolean),
+                    products: e.target.value.split("\n"),
                   },
                 }))
               }
@@ -1242,6 +2007,80 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* PT Leads Tab */}
+        {activeTab === "pt" && (
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="font-display text-2xl uppercase tracking-wide">Personal Training Leads</h2>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={fetchPtUsers}
+                    disabled={ptLoading}
+                    className="inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700 disabled:opacity-70"
+                  >
+                    <RefreshCw size={14} /> {ptLoading ? "Loading..." : "Reload"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportToExcel(ptUsers, "personal_training_leads")}
+                    className="inline-flex items-center gap-2 rounded-lg border border-brand-orange/50 px-4 py-2 text-sm font-semibold text-brand-orange transition hover:bg-brand-orange/10"
+                  >
+                    <Download size={14} /> Export CSV
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-lg border border-zinc-700">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-zinc-700 bg-black/40">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-300">Date</th>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-300">Name</th>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-300">Email</th>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-300">Phone</th>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-300">Preferred Slot</th>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-300">Goal</th>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-300">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-700">
+                    {ptLoading ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">Loading PT leads...</td>
+                      </tr>
+                    ) : ptUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">No PT leads yet. Click reload to fetch data.</td>
+                      </tr>
+                    ) : (
+                      ptUsers.map((user, idx) => (
+                        <tr key={idx} className="hover:bg-black/30 transition">
+                          <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt || user.timestamp).toLocaleDateString()}</td>
+                          <td className="px-4 py-3 text-zinc-300">{user.name}</td>
+                          <td className="px-4 py-3 text-zinc-300 break-words max-w-xs">{user.email}</td>
+                          <td className="px-4 py-3 text-zinc-300">{user.phone}</td>
+                          <td className="px-4 py-3 text-zinc-300">{user.preferredSlot || "-"}</td>
+                          <td className="px-4 py-3 text-zinc-300">{user.goal || "-"}</td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => deletePtUser(user.rowIndex)}
+                              className="text-red-400 hover:text-red-300 transition text-sm font-semibold"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        )}
+
         {/* Reports Tab */}
         {activeTab === "reports" && (
           <div className="space-y-6">
@@ -1356,10 +2195,346 @@ export default function AdminPage() {
         {activeTab === "email" && (
           <div className="space-y-6">
             <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-              <h2 className="font-display text-2xl uppercase tracking-wide mb-6">Send Email to Users</h2>
+              <h2 className="font-display text-2xl uppercase tracking-wide mb-6">SMTP Setup & Email Campaigns</h2>
 
-              {/* Email Subject & Body */}
               <div className="rounded-xl border border-zinc-700 bg-black/40 p-4 mb-6">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-zinc-300">SMTP Configuration</h3>
+                  <button
+                    type="button"
+                    onClick={() => saveCms("emailSettings")}
+                    disabled={isSaving || !hasUnsavedSection("emailSettings")}
+                    className="inline-flex items-center gap-2 rounded-lg bg-brand-orange px-3 py-2 text-xs font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    <Save size={12} /> {isSaving ? "Saving..." : "Save SMTP"}
+                  </button>
+                </div>
+                {hasUnsavedSection("emailSettings") ? <p className="mb-3 text-xs text-amber-300">Unsaved changes in SMTP settings.</p> : null}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-200">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(cmsData.emailSettings.enabled)}
+                      onChange={(e) =>
+                        setCmsData((prev) => ({
+                          ...prev,
+                          emailSettings: {
+                            ...prev.emailSettings,
+                            enabled: e.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    Enable SMTP Email Delivery
+                  </label>
+
+                  <select
+                    value={cmsData.emailSettings.provider}
+                    onChange={(e) => applySmtpProviderDefaults(e.target.value as "gmail" | "zoho" | "stackmail" | "yahoo" | "titan" | "custom")}
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  >
+                    <option value="gmail">Gmail (App Password)</option>
+                    <option value="zoho">Zoho</option>
+                    <option value="stackmail">Stackmail</option>
+                    <option value="yahoo">Yahoo</option>
+                    <option value="titan">Titan</option>
+                    <option value="custom">Custom SMTP</option>
+                  </select>
+
+                  <input
+                    value={cmsData.emailSettings.host}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailSettings: {
+                          ...prev.emailSettings,
+                          host: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="SMTP Host"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+
+                  <input
+                    type="number"
+                    value={String(cmsData.emailSettings.port || 587)}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailSettings: {
+                          ...prev.emailSettings,
+                          port: Number(e.target.value || 587),
+                        },
+                      }))
+                    }
+                    placeholder="Port"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-200">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(cmsData.emailSettings.secure)}
+                      onChange={(e) =>
+                        setCmsData((prev) => ({
+                          ...prev,
+                          emailSettings: {
+                            ...prev.emailSettings,
+                            secure: e.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    Use SSL/TLS (Secure)
+                  </label>
+
+                  <input
+                    value={cmsData.emailSettings.user}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailSettings: {
+                          ...prev.emailSettings,
+                          user: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="SMTP Username"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+
+                  <input
+                    type="password"
+                    value={cmsData.emailSettings.password}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailSettings: {
+                          ...prev.emailSettings,
+                          password: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="SMTP Password / App Password"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+
+                  <input
+                    value={cmsData.emailSettings.fromName}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailSettings: {
+                          ...prev.emailSettings,
+                          fromName: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="From Name"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+
+                  <input
+                    value={cmsData.emailSettings.fromEmail}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailSettings: {
+                          ...prev.emailSettings,
+                          fromEmail: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="From Email"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+
+                  <input
+                    value={(cmsData.emailSettings.adminNotifyEmails || []).join(", ")}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailSettings: {
+                          ...prev.emailSettings,
+                          adminNotifyEmails: e.target.value.split(","),
+                        },
+                      }))
+                    }
+                    placeholder="Admin notify emails (comma separated)"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange lg:col-span-2"
+                  />
+                </div>
+
+                <p className="mt-3 text-xs text-zinc-400">
+                  Provider quick-setup included for Gmail, Zoho, Stackmail, Yahoo, Titan and custom SMTP. Save changes after update.
+                </p>
+
+                <div className="mt-4 rounded-lg border border-zinc-700 bg-black/50 p-4">
+                  <p className="text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">SMTP Test</p>
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <input
+                      type="email"
+                      value={smtpTestEmail}
+                      onChange={(e) => setSmtpTestEmail(e.target.value)}
+                      placeholder="Recipient email for test"
+                      className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                    />
+                    <button
+                      type="button"
+                      onClick={runSmtpTest}
+                      disabled={smtpTestLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-70"
+                    >
+                      {smtpTestLoading ? "Testing..." : "Test SMTP"}
+                    </button>
+                  </div>
+                  {smtpDiagnostics ? (
+                    <pre className="mt-3 max-h-48 overflow-auto rounded-lg border border-zinc-700 bg-black p-3 text-xs text-zinc-300">
+                      {smtpDiagnostics}
+                    </pre>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-zinc-700 bg-black/40 p-4 mb-6">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-zinc-300">Default Auto-Email Templates (used on form submission)</h3>
+                  <button
+                    type="button"
+                    onClick={() => saveCms("emailTemplates")}
+                    disabled={isSaving || !hasUnsavedSection("emailTemplates")}
+                    className="inline-flex items-center gap-2 rounded-lg bg-brand-orange px-3 py-2 text-xs font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    <Save size={12} /> {isSaving ? "Saving..." : "Save Templates"}
+                  </button>
+                </div>
+                {hasUnsavedSection("emailTemplates") ? <p className="mb-3 text-xs text-amber-300">Unsaved changes in Email templates.</p> : null}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <input
+                    type="text"
+                    value={cmsData.emailTemplates.userSubject}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailTemplates: {
+                          ...prev.emailTemplates,
+                          userSubject: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="User Email Subject"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <input
+                    type="text"
+                    value={cmsData.emailTemplates.adminSubject}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailTemplates: {
+                          ...prev.emailTemplates,
+                          adminSubject: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Admin Email Subject"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <textarea
+                    rows={6}
+                    value={cmsData.emailTemplates.userHtml}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailTemplates: {
+                          ...prev.emailTemplates,
+                          userHtml: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="User HTML template"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <textarea
+                    rows={6}
+                    value={cmsData.emailTemplates.adminHtml}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailTemplates: {
+                          ...prev.emailTemplates,
+                          adminHtml: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Admin HTML template"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <textarea
+                    rows={4}
+                    value={cmsData.emailTemplates.userText}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailTemplates: {
+                          ...prev.emailTemplates,
+                          userText: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="User plain-text (word) template"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                  <textarea
+                    rows={4}
+                    value={cmsData.emailTemplates.adminText}
+                    onChange={(e) =>
+                      setCmsData((prev) => ({
+                        ...prev,
+                        emailTemplates: {
+                          ...prev.emailTemplates,
+                          adminText: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Admin plain-text (word) template"
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                </div>
+
+                <p className="mt-3 text-xs text-zinc-400">
+                  {"Placeholders supported: {{name}}, {{email}}, {{phone}}, {{program}}, {{planName}}, {{planPrice}}, {{goal}}, {{formType}}, {{submittedAt}}"}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-zinc-700 bg-black/40 p-4 mb-6">
+                <h3 className="font-semibold text-sm uppercase tracking-wide text-zinc-300 mb-4">Manual Campaign Editor (HTML + Word/Text)</h3>
+                <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+                  <select
+                    value={selectedManualTemplatePreset}
+                    onChange={(e) => setSelectedManualTemplatePreset(e.target.value as "trial" | "plan_enquiry" | "lap")}
+                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  >
+                    <option value="trial">Starter Template: Trial</option>
+                    <option value="plan_enquiry">Starter Template: Plan Enquiry</option>
+                    <option value="lap">Starter Template: LAP</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={applyManualTemplatePreset}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700"
+                  >
+                    Apply Starter Template
+                  </button>
+                </div>
+
                 <div className="mb-4">
                   <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">Email Subject</label>
                   <input
@@ -1372,12 +2547,23 @@ export default function AdminPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">Message Body</label>
+                  <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">Message Body (Text / Word style)</label>
                   <textarea
                     rows={6}
                     value={emailBody}
                     onChange={(e) => setEmailBody(e.target.value)}
                     placeholder="Enter your email message here..."
+                    className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">Message Body (HTML)</label>
+                  <textarea
+                    rows={8}
+                    value={emailHtmlBody}
+                    onChange={(e) => setEmailHtmlBody(e.target.value)}
+                    placeholder="Enter full HTML email body for branded card-style messages..."
                     className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                   />
                 </div>
@@ -1457,7 +2643,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={sendEmail}
-                  disabled={emailSending || emailRecipients.length === 0 || !emailSubject.trim() || !emailBody.trim()}
+                  disabled={emailSending || emailRecipients.length === 0 || !emailSubject.trim() || (!emailBody.trim() && !emailHtmlBody.trim())}
                   className="inline-flex items-center gap-2 rounded-lg bg-brand-orange px-6 py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-50"
                 >
                   <Mail size={16} /> {emailSending ? "Sending..." : "Send Email"}

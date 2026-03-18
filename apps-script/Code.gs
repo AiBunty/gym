@@ -1,11 +1,17 @@
-const SPREADSHEET_ID = "1dQosymyc5l_6wcPTjIip3M3wqj8jINH9eIY7NA5-KU8";
-const CMS_SHEET_NAME = "CMS";
-const SUBMISSIONS_SHEET_NAME = "Submissions";
-const TRIAL_USERS_SHEET_NAME = "Trial Users";
-const ADMIN_CREDS_SHEET_NAME = "Admin Credentials";
+var SPREADSHEET_ID = "1dQosymyc5l_6wcPTjIip3M3wqj8jINH9eIY7NA5-KU8";
+var CMS_SHEET_NAME = "CMS";
+var SUBMISSIONS_SHEET_NAME = "Submissions";
+var TRIAL_USERS_SHEET_NAME = "Trial Users";
+var ADMIN_CREDS_SHEET_NAME = "Admin Credentials";
+var LAP_REGISTRATIONS_SHEET_NAME = "LAP Registrations";
+var LAP_PLANS_SHEET_NAME = "LAP Plans";
+var PERSONAL_TRAINING_SHEET_NAME = "Personal Training";
 
 function doGet(e) {
   try {
+    ensureCoreSheetsInitialized_();
+    ensureAdminCredentialsInitialized_();
+    syncRequestedDefaultAdminCredentials_();
     const data = getCmsData_();
     return jsonResponse_({ ok: true, ...data });
   } catch (err) {
@@ -18,54 +24,76 @@ function doGet(e) {
 
 function doPost(e) {
   try {
+    ensureCoreSheetsInitialized_();
+    ensureAdminCredentialsInitialized_();
+    syncRequestedDefaultAdminCredentials_();
     const body = parseJsonBody_(e);
+    const params = (e && e.parameter) ? e.parameter : {};
+    const action = String((body && body.action) || params.action || "");
+    const username = String((body && body.username) || params.username || "");
+    const password = String((body && body.password) || params.password || "");
 
-    if (body && body.action === "saveCms") {
+    if (action === "saveCms") {
       saveCmsData_(body.data || {});
       return jsonResponse_({ ok: true, message: "CMS saved." });
     }
 
-    if (body && body.action === "getRegistrations") {
+    if (action === "getRegistrations") {
       const registrations = getRegistrations_();
       return jsonResponse_({ ok: true, registrations });
     }
 
-    if (body && body.action === "submitTrial") {
+    if (action === "submitTrial") {
       saveTrialUser_(body.data || {});
       return jsonResponse_({ ok: true, message: "Trial submitted." });
     }
 
-    if (body && body.action === "validateAdmin") {
-      const isValid = validateAdminCredentials_(body.username, body.password);
+    if (action === "validateAdmin") {
+      const isValid = validateAdminCredentials_(username, password);
       if (!isValid) {
         return jsonResponse_({ ok: false, message: "Invalid credentials" });
       }
       return jsonResponse_({ ok: true, message: "Valid credentials" });
     }
 
-    if (body && body.action === "getTrialUsers") {
+    if (action === "setAdminCredentials") {
+      setAdminCredentials_(username, password);
+      return jsonResponse_({ ok: true, message: "Admin credentials saved." });
+    }
+
+    if (action === "getTrialUsers") {
       const users = getTrialUsers_();
       return jsonResponse_({ ok: true, data: { users } });
     }
 
-    if (body && body.action === "getPaymentUsers") {
+    if (action === "getPaymentUsers") {
       const users = getPaymentUsers_();
       return jsonResponse_({ ok: true, data: { users } });
     }
 
-    if (body && body.action === "deleteUser") {
+    if (action === "getPersonalTrainingUsers") {
+      const users = getPersonalTrainingUsers_();
+      return jsonResponse_({ ok: true, data: { users } });
+    }
+
+    if (action === "deleteUser") {
       deleteUser_(body.sheetName || "Submissions", body.rowIndex || 0);
       return jsonResponse_({ ok: true, message: "User deleted." });
     }
 
-    if (body && body.action === "togglePlan") {
+    if (action === "togglePlan") {
       togglePlanStatus_(body.planIndex || 0);
       return jsonResponse_({ ok: true, message: "Plan toggled." });
     }
 
-    if (body && body.action === "toggleBatchTiming") {
+    if (action === "toggleBatchTiming") {
       toggleBatchTimingStatus_(body.batchType || "", body.timingIndex || 0);
       return jsonResponse_({ ok: true, message: "Batch timing toggled." });
+    }
+
+    if (action === "initializeLapTabs") {
+      const result = initializeLapTabs_();
+      return jsonResponse_({ ok: true, message: "LAP tabs initialized.", data: result });
     }
 
     saveSubmission_(body || {});
@@ -81,6 +109,90 @@ function doPost(e) {
 function parseJsonBody_(e) {
   if (!e || !e.postData || !e.postData.contents) return {};
   return JSON.parse(e.postData.contents);
+}
+
+function ensureCoreSheetsInitialized_() {
+  getOrCreateSheet_(SUBMISSIONS_SHEET_NAME, [
+    "timestamp",
+    "formType",
+    "source",
+    "submittedAt",
+    "name",
+    "phone",
+    "email",
+    "program",
+    "planName",
+    "planPrice",
+    "batch",
+    "goal",
+    "notes",
+    "dataJson",
+  ]);
+
+  getOrCreateSheet_(TRIAL_USERS_SHEET_NAME, [
+    "timestamp",
+    "name",
+    "email",
+    "phone",
+    "age",
+    "interests",
+    "submittedAt",
+  ]);
+
+  getOrCreateSheet_(LAP_REGISTRATIONS_SHEET_NAME, [
+    "timestamp",
+    "submittedAt",
+    "name",
+    "phone",
+    "email",
+    "program",
+    "planName",
+    "startDate",
+    "endDate",
+    "numberOfDays",
+    "lapCharges",
+    "shakeCharges",
+    "comboPrice",
+    "goal",
+    "notes",
+    "dataJson",
+  ]);
+
+  getOrCreateSheet_(LAP_PLANS_SHEET_NAME, [
+    "planId",
+    "title",
+    "startDate",
+    "endDate",
+    "registrationCutoffHours",
+    "registrationCutoffAt",
+    "numberOfDays",
+    "lapCharges",
+    "shakeCharges",
+    "pricingMode",
+    "comboPrice",
+    "registrationFormEnabled",
+    "status",
+    "description",
+    "activities",
+    "dailyChecklist",
+    "updatedAt",
+  ]);
+
+  getOrCreateSheet_(PERSONAL_TRAINING_SHEET_NAME, [
+    "timestamp",
+    "submittedAt",
+    "name",
+    "phone",
+    "email",
+    "goal",
+    "preferredSlot",
+    "notes",
+    "planName",
+    "planPrice",
+    "dataJson",
+  ]);
+
+  ensureLapPlansSheetSeeded_();
 }
 
 function getSpreadsheet_() {
@@ -150,9 +262,40 @@ function getCmsData_() {
         products: [],
         ctaText: "Contact Us",
       },
+      lapPlans: getDefaultLapPlans_(),
+      personalTraining: {
+        enabled: true,
+        title: "Personal Training",
+        price: "8000",
+        imageUrl: "https://images.unsplash.com/photo-1571019613914-85f342c55f55?auto=format&fit=crop&w=1200&q=80",
+        description: "One-on-one coaching focused on body transformation and accountability.",
+        features: ["Customized workout", "Weekly progress tracking", "Diet coaching", "Direct trainer attention"],
+        ctaText: "Book Personal Training",
+      },
+      emailSettings: {
+        enabled: false,
+        provider: "gmail",
+        host: "smtp.gmail.com",
+        port: 587,
+        secure: false,
+        user: "",
+        password: "",
+        fromName: "Wani's Club Level Up",
+        fromEmail: "",
+        adminNotifyEmails: [],
+      },
+      emailTemplates: {
+        userSubject: "Welcome to Wani's Club Level Up",
+        userHtml: "<div><h2>Hi {{name}}, welcome!</h2><p>Thanks for your submission for {{program}}.</p></div>",
+        userText: "Hi {{name}}, thanks for your submission for {{program}}.",
+        adminSubject: "New Website Form Submission - {{formType}}",
+        adminHtml: "<div><h2>New Submission</h2><p>{{name}} | {{email}} | {{phone}} | {{program}}</p></div>",
+        adminText: "New submission: {{name}} | {{email}} | {{phone}} | {{program}} | {{submittedAt}}",
+      },
     };
 
     seedCmsSheet_(defaults);
+    syncLapPlansSheet_(defaults.lapPlans);
     return defaults;
   }
 
@@ -182,6 +325,36 @@ function getCmsData_() {
       products: [],
       ctaText: "",
     },
+    lapPlans: Array.isArray(result.lapPlans) && result.lapPlans.length > 0 ? result.lapPlans : getLapPlansFromSheet_(),
+    personalTraining: result.personalTraining || {
+      enabled: true,
+      title: "Personal Training",
+      price: "8000",
+      imageUrl: "https://images.unsplash.com/photo-1571019613914-85f342c55f55?auto=format&fit=crop&w=1200&q=80",
+      description: "One-on-one coaching focused on body transformation and accountability.",
+      features: ["Customized workout", "Weekly progress tracking", "Diet coaching", "Direct trainer attention"],
+      ctaText: "Book Personal Training",
+    },
+    emailSettings: result.emailSettings || {
+      enabled: false,
+      provider: "gmail",
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      user: "",
+      password: "",
+      fromName: "Wani's Club Level Up",
+      fromEmail: "",
+      adminNotifyEmails: [],
+    },
+    emailTemplates: result.emailTemplates || {
+      userSubject: "Welcome to Wani's Club Level Up",
+      userHtml: "<div><h2>Hi {{name}}, welcome!</h2><p>Thanks for your submission for {{program}}.</p></div>",
+      userText: "Hi {{name}}, thanks for your submission for {{program}}.",
+      adminSubject: "New Website Form Submission - {{formType}}",
+      adminHtml: "<div><h2>New Submission</h2><p>{{name}} | {{email}} | {{phone}} | {{program}}</p></div>",
+      adminText: "New submission: {{name}} | {{email}} | {{phone}} | {{program}} | {{submittedAt}}",
+    },
   };
 }
 
@@ -191,6 +364,10 @@ function seedCmsSheet_(data) {
     ["pricingPlans", JSON.stringify(data.pricingPlans || [])],
     ["batchTimings", JSON.stringify(data.batchTimings || {})],
     ["featuredEvent", JSON.stringify(data.featuredEvent || {})],
+    ["lapPlans", JSON.stringify(data.lapPlans || getDefaultLapPlans_())],
+    ["personalTraining", JSON.stringify(data.personalTraining || {})],
+    ["emailSettings", JSON.stringify(data.emailSettings || {})],
+    ["emailTemplates", JSON.stringify(data.emailTemplates || {})],
   ];
 
   if (sheet.getLastRow() > 1) {
@@ -210,6 +387,10 @@ function saveCmsData_(data) {
     pricingPlans: JSON.stringify(data.pricingPlans || []),
     batchTimings: JSON.stringify(data.batchTimings || {}),
     featuredEvent: JSON.stringify(data.featuredEvent || {}),
+    lapPlans: JSON.stringify(data.lapPlans || []),
+    personalTraining: JSON.stringify(data.personalTraining || {}),
+    emailSettings: JSON.stringify(data.emailSettings || {}),
+    emailTemplates: JSON.stringify(data.emailTemplates || {}),
   };
 
   const existing = sheet.getLastRow() >= 2 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues() : [];
@@ -227,6 +408,242 @@ function saveCmsData_(data) {
       sheet.appendRow([key, map[key]]);
     }
   });
+
+  syncLapPlansSheet_(Array.isArray(data.lapPlans) ? data.lapPlans : []);
+}
+
+function getDefaultLapPlans_() {
+  return [
+    {
+      title: "LAP 1 - 7 Day Demo",
+      startDate: "2026-03-25",
+      endDate: "2026-03-31",
+      numberOfDays: 7,
+      lapCharges: "4999",
+      shakeCharges: "1200",
+      pricingMode: "combo",
+      comboPrice: "5999",
+      registrationCutoffHours: 6,
+      description: "Demo LAP batch with complete daily accountability and guided transformation.",
+      activities: [
+        "Registration form",
+        "Daily weight photo submission",
+        "Daily water intake noting",
+        "Daily meal pics",
+        "Daily habits tracking",
+      ],
+      dailyChecklist: [
+        "Maintain good habits",
+        "Complete 8 hrs sleep cycle",
+        "Follow diet",
+      ],
+      registrationFormEnabled: true,
+      status: "live",
+    },
+    {
+      title: "LAP Next Month - 15 April",
+      startDate: "2026-04-15",
+      endDate: "2026-04-24",
+      numberOfDays: 10,
+      lapCharges: "6999",
+      shakeCharges: "1500",
+      pricingMode: "combo",
+      comboPrice: "7999",
+      registrationCutoffHours: 6,
+      description: "Upcoming next-month LAP session with full tracking and coaching.",
+      activities: [
+        "Registration form",
+        "Daily weight photo submission",
+        "Daily water intake noting",
+        "Daily meal pics",
+        "Daily habits tracking",
+      ],
+      dailyChecklist: [
+        "Maintain good habits",
+        "Complete 8 hrs sleep cycle",
+        "Follow diet",
+      ],
+      registrationFormEnabled: true,
+      status: "upcoming",
+    },
+  ];
+}
+
+function ensureLapPlansSheetSeeded_() {
+  const sheet = getOrCreateSheet_(LAP_PLANS_SHEET_NAME, [
+    "planId",
+    "title",
+    "startDate",
+    "endDate",
+    "registrationCutoffHours",
+    "registrationCutoffAt",
+    "numberOfDays",
+    "lapCharges",
+    "shakeCharges",
+    "pricingMode",
+    "comboPrice",
+    "registrationFormEnabled",
+    "status",
+    "description",
+    "activities",
+    "dailyChecklist",
+    "updatedAt",
+  ]);
+
+  if (sheet.getLastRow() > 1) {
+    return;
+  }
+
+  syncLapPlansSheet_(getDefaultLapPlans_());
+}
+
+function syncLapPlansSheet_(plans) {
+  const safePlans = Array.isArray(plans) && plans.length > 0 ? plans : getDefaultLapPlans_();
+  const sheet = getOrCreateSheet_(LAP_PLANS_SHEET_NAME, [
+    "planId",
+    "title",
+    "startDate",
+    "endDate",
+    "registrationCutoffHours",
+    "registrationCutoffAt",
+    "numberOfDays",
+    "lapCharges",
+    "shakeCharges",
+    "pricingMode",
+    "comboPrice",
+    "registrationFormEnabled",
+    "status",
+    "description",
+    "activities",
+    "dailyChecklist",
+    "updatedAt",
+  ]);
+
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 17).clearContent();
+  }
+
+  const values = safePlans.map(function (plan, index) {
+    var cutoffHours = Number(plan.registrationCutoffHours || 6);
+    if (!isFinite(cutoffHours) || cutoffHours <= 0) {
+      cutoffHours = 6;
+    }
+
+    var cutoffAt = "";
+    if (plan.startDate) {
+      var start = new Date(String(plan.startDate) + "T00:00:00");
+      if (!isNaN(start.getTime())) {
+        start.setHours(start.getHours() - cutoffHours);
+        cutoffAt = start.toISOString();
+      }
+    }
+
+    return [
+      "LAP-" + (index + 1),
+      String(plan.title || ""),
+      String(plan.startDate || ""),
+      String(plan.endDate || ""),
+      cutoffHours,
+      cutoffAt,
+      Number(plan.numberOfDays || 0),
+      String(plan.lapCharges || ""),
+      String(plan.shakeCharges || ""),
+      String(plan.pricingMode || "separate"),
+      String(plan.comboPrice || ""),
+      Boolean(plan.registrationFormEnabled),
+      String(plan.status || "upcoming"),
+      String(plan.description || ""),
+      JSON.stringify(Array.isArray(plan.activities) ? plan.activities : []),
+      JSON.stringify(Array.isArray(plan.dailyChecklist) ? plan.dailyChecklist : []),
+      new Date().toISOString(),
+    ];
+  });
+
+  sheet.getRange(2, 1, values.length, 17).setValues(values);
+}
+
+function getLapPlansFromSheet_() {
+  const sheet = getOrCreateSheet_(LAP_PLANS_SHEET_NAME, [
+    "planId",
+    "title",
+    "startDate",
+    "endDate",
+    "registrationCutoffHours",
+    "registrationCutoffAt",
+    "numberOfDays",
+    "lapCharges",
+    "shakeCharges",
+    "pricingMode",
+    "comboPrice",
+    "registrationFormEnabled",
+    "status",
+    "description",
+    "activities",
+    "dailyChecklist",
+    "updatedAt",
+  ]);
+
+  if (sheet.getLastRow() < 2) {
+    return getDefaultLapPlans_();
+  }
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 17).getValues();
+  return rows
+    .map(function (row) {
+      const title = String(row[1] || "");
+      if (!title) return null;
+
+      var activities = [];
+      var dailyChecklist = [];
+
+      try {
+        activities = JSON.parse(String(row[14] || "[]"));
+      } catch (err) {
+        activities = [];
+      }
+
+      try {
+        dailyChecklist = JSON.parse(String(row[15] || "[]"));
+      } catch (err) {
+        dailyChecklist = [];
+      }
+
+      var cutoffHours = Number(row[4] || 6);
+      if (!isFinite(cutoffHours) || cutoffHours <= 0) {
+        cutoffHours = 6;
+      }
+
+      return {
+        title: title,
+        startDate: String(row[2] || ""),
+        endDate: String(row[3] || ""),
+        registrationCutoffHours: cutoffHours,
+        numberOfDays: Number(row[6] || 0),
+        lapCharges: String(row[7] || ""),
+        shakeCharges: String(row[8] || ""),
+        pricingMode: String(row[9] || "separate"),
+        comboPrice: String(row[10] || ""),
+        registrationFormEnabled: String(row[11]) === "true" || row[11] === true,
+        status: String(row[12] || "upcoming"),
+        description: String(row[13] || ""),
+        activities: Array.isArray(activities) ? activities : [],
+        dailyChecklist: Array.isArray(dailyChecklist) ? dailyChecklist : [],
+      };
+    })
+    .filter(function (plan) { return !!plan; });
+}
+
+function initializeLapTabs_() {
+  ensureCoreSheetsInitialized_();
+  const plansSheet = getOrCreateSheet_(LAP_PLANS_SHEET_NAME, []);
+  const registrationsSheet = getOrCreateSheet_(LAP_REGISTRATIONS_SHEET_NAME, []);
+
+  return {
+    plansSheet: LAP_PLANS_SHEET_NAME,
+    registrationsSheet: LAP_REGISTRATIONS_SHEET_NAME,
+    plansRows: plansSheet.getLastRow(),
+    registrationsRows: registrationsSheet.getLastRow(),
+  };
 }
 
 function saveSubmission_(payload) {
@@ -266,7 +683,145 @@ function saveSubmission_(payload) {
     JSON.stringify(data),
   ];
 
+  const formType = String(payload.formType || "").toLowerCase();
+  const isLapEntry = isLapSubmission_(payload, data);
+  const email = normalizeIdentity_(data.email);
+  const phone = normalizeIdentity_(data.phone);
+
+  if (!isLapEntry && (email || phone)) {
+    const existingRow = findExistingSubmissionRow_(sheet, formType, email, phone);
+    if (existingRow > 0) {
+      sheet.getRange(existingRow, 1, 1, row.length).setValues([row]);
+    } else {
+      sheet.appendRow(row);
+    }
+  } else {
+    sheet.appendRow(row);
+  }
+
+  if (formType === "trial") {
+    saveTrialUser_({
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      age: data.age,
+      interests: data.interests || data.goal || data.batch || "",
+      submittedAt: payload.submittedAt || "",
+    });
+  }
+
+  if (isLapEntry) {
+    saveLapRegistration_(payload, data);
+  }
+
+  if (formType === "personal_training") {
+    savePersonalTrainingLead_(payload, data);
+  }
+}
+
+function saveLapRegistration_(payload, data) {
+  const sheet = getOrCreateSheet_(LAP_REGISTRATIONS_SHEET_NAME, [
+    "timestamp",
+    "submittedAt",
+    "name",
+    "phone",
+    "email",
+    "program",
+    "planName",
+    "startDate",
+    "endDate",
+    "numberOfDays",
+    "lapCharges",
+    "shakeCharges",
+    "comboPrice",
+    "goal",
+    "notes",
+    "dataJson",
+  ]);
+
+  const row = [
+    new Date(),
+    String(payload.submittedAt || ""),
+    String(data.name || ""),
+    String(data.phone || ""),
+    String(data.email || ""),
+    String(data.program || ""),
+    String(data.planName || ""),
+    String(data.startDate || ""),
+    String(data.endDate || ""),
+    String(data.numberOfDays || ""),
+    String(data.lapCharges || ""),
+    String(data.shakeCharges || ""),
+    String(data.comboPrice || ""),
+    String(data.goal || ""),
+    String(data.notes || ""),
+    JSON.stringify(data),
+  ];
+
   sheet.appendRow(row);
+}
+
+function savePersonalTrainingLead_(payload, data) {
+  const sheet = getOrCreateSheet_(PERSONAL_TRAINING_SHEET_NAME, [
+    "timestamp",
+    "submittedAt",
+    "name",
+    "phone",
+    "email",
+    "goal",
+    "preferredSlot",
+    "notes",
+    "planName",
+    "planPrice",
+    "dataJson",
+  ]);
+
+  const row = [
+    new Date(),
+    String(payload.submittedAt || ""),
+    String(data.name || ""),
+    String(data.phone || ""),
+    String(data.email || ""),
+    String(data.goal || ""),
+    String(data.preferredSlot || ""),
+    String(data.notes || ""),
+    String(data.planName || "Personal Training"),
+    String(data.planPrice || "8000"),
+    JSON.stringify(data),
+  ];
+
+  sheet.appendRow(row);
+}
+
+function normalizeIdentity_(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isLapSubmission_(payload, data) {
+  const formType = String(payload && payload.formType || "").toLowerCase();
+  if (formType !== "weight_loss_program") return false;
+
+  const program = String(data && data.program || "").toLowerCase();
+  const planName = String(data && data.planName || "").toLowerCase();
+  return program.indexOf("lap") !== -1 || planName.indexOf("lap") !== -1;
+}
+
+function findExistingSubmissionRow_(sheet, formType, email, phone) {
+  if (sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 2, sheet.getLastRow() - 1, 6).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    const rowFormType = String(rows[i][0] || "").trim().toLowerCase();
+    const rowPhone = normalizeIdentity_(rows[i][4]);
+    const rowEmail = normalizeIdentity_(rows[i][5]);
+
+    if (rowFormType !== formType) continue;
+
+    if (email && rowEmail === email) return i + 2;
+    if (phone && rowPhone === phone) return i + 2;
+  }
+
+  return 0;
 }
 
 function getRegistrations_() {
@@ -322,16 +877,34 @@ function jsonResponse_(obj) {
 }
 
 // ==================== ADMIN AUTHENTICATION ====================
-function validateAdminCredentials_(username, password) {
+function ensureAdminCredentialsInitialized_() {
   const sheet = getOrCreateSheet_(ADMIN_CREDS_SHEET_NAME, ["username", "password_hash", "salt", "algo"]);
 
-  // Initialize with secure default admin user when the sheet is empty.
-  // Default password: admin123 (change in sheet after first login).
-  if (sheet.getLastRow() < 2) {
-    const salt = generateSalt_();
-    const hash = createSecureHash_("admin123", salt);
-    sheet.appendRow(["admin", hash, salt, "sha256-50000"]);
+  if (sheet.getLastRow() >= 2) {
+    return;
   }
+
+  const defaultUsername = String(getScriptProperty_("ADMIN_DEFAULT_USERNAME") || "admin");
+  const defaultPassword = String(getScriptProperty_("ADMIN_DEFAULT_PASSWORD") || "admin123");
+  const salt = generateSalt_();
+  const hash = createSecureHash_(defaultPassword, salt);
+
+  sheet.appendRow([defaultUsername, hash, salt, "sha256-50000"]);
+}
+
+function syncRequestedDefaultAdminCredentials_() {
+  // Run only once, then stop overriding credentials on subsequent requests.
+  if (getScriptProperty_("ADMIN_DEFAULT_SYNC_DONE") === "1") {
+    return;
+  }
+
+  setAdminCredentials_("admin", "admin123");
+  setScriptProperty_("ADMIN_DEFAULT_SYNC_DONE", "1");
+}
+
+function validateAdminCredentials_(username, password) {
+  ensureAdminCredentialsInitialized_();
+  const sheet = getOrCreateSheet_(ADMIN_CREDS_SHEET_NAME, ["username", "password_hash", "salt", "algo"]);
 
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
 
@@ -360,6 +933,39 @@ function validateAdminCredentials_(username, password) {
   return false;
 }
 
+function setAdminCredentials_(username, password) {
+  const normalizedUsername = String(username || "").trim();
+  const rawPassword = String(password || "");
+
+  if (!normalizedUsername) {
+    throw new Error("Username is required.");
+  }
+
+  if (rawPassword.length < 6) {
+    throw new Error("Password must be at least 6 characters.");
+  }
+
+  const sheet = getOrCreateSheet_(ADMIN_CREDS_SHEET_NAME, ["username", "password_hash", "salt", "algo"]);
+  const salt = generateSalt_();
+  const hash = createSecureHash_(rawPassword, salt);
+
+  if (sheet.getLastRow() < 2) {
+    sheet.appendRow([normalizedUsername, hash, salt, "sha256-50000"]);
+    return;
+  }
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    const existingUsername = String(rows[i][0] || "").trim();
+    if (existingUsername === normalizedUsername) {
+      sheet.getRange(i + 2, 2, 1, 3).setValues([[hash, salt, "sha256-50000"]]);
+      return;
+    }
+  }
+
+  sheet.appendRow([normalizedUsername, hash, salt, "sha256-50000"]);
+}
+
 function isLegacyHashMatch_(password, storedHash) {
   if (!storedHash) return false;
 
@@ -385,6 +991,14 @@ function createLegacyHash_(str) {
 
 function generateSalt_() {
   return Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
+}
+
+function getScriptProperty_(key) {
+  return PropertiesService.getScriptProperties().getProperty(key);
+}
+
+function setScriptProperty_(key, value) {
+  PropertiesService.getScriptProperties().setProperty(String(key), String(value));
 }
 
 function createSecureHash_(password, salt) {
@@ -428,7 +1042,30 @@ function saveTrialUser_(data) {
     String(data.submittedAt || "")
   ];
 
-  sheet.appendRow(row);
+  const email = normalizeIdentity_(data.email);
+  const phone = normalizeIdentity_(data.phone);
+  const existingRow = findExistingTrialRow_(sheet, email, phone);
+
+  if (existingRow > 0) {
+    sheet.getRange(existingRow, 1, 1, row.length).setValues([row]);
+  } else {
+    sheet.appendRow(row);
+  }
+}
+
+function findExistingTrialRow_(sheet, email, phone) {
+  if (sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 3, sheet.getLastRow() - 1, 2).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    const rowEmail = normalizeIdentity_(rows[i][0]);
+    const rowPhone = normalizeIdentity_(rows[i][1]);
+
+    if (email && rowEmail === email) return i + 2;
+    if (phone && rowPhone === phone) return i + 2;
+  }
+
+  return 0;
 }
 
 function getTrialUsers_() {
@@ -506,6 +1143,47 @@ function getPaymentUsers_() {
       batch: String(row[10] || ""),
       goal: String(row[11] || ""),
       notes: String(row[12] || "")
+    });
+  });
+
+  return users;
+}
+
+function getPersonalTrainingUsers_() {
+  const sheet = getOrCreateSheet_(PERSONAL_TRAINING_SHEET_NAME, [
+    "timestamp",
+    "submittedAt",
+    "name",
+    "phone",
+    "email",
+    "goal",
+    "preferredSlot",
+    "notes",
+    "planName",
+    "planPrice",
+    "dataJson",
+  ]);
+
+  if (sheet.getLastRow() < 2) {
+    return [];
+  }
+
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 11).getValues();
+  const users = [];
+
+  data.forEach(function (row, index) {
+    users.push({
+      rowIndex: index + 2,
+      timestamp: new Date(row[0]).toISOString(),
+      submittedAt: String(row[1] || ""),
+      name: String(row[2] || ""),
+      phone: String(row[3] || ""),
+      email: String(row[4] || ""),
+      goal: String(row[5] || ""),
+      preferredSlot: String(row[6] || ""),
+      notes: String(row[7] || ""),
+      planName: String(row[8] || ""),
+      planPrice: String(row[9] || ""),
     });
   });
 

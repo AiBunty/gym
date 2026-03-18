@@ -8,9 +8,13 @@ import TrialOfferFormModal from "@/components/TrialOfferFormModal";
 import {
   defaultBatchTimings,
   defaultFeaturedEvent,
+  defaultLapPlans,
+  defaultPersonalTraining,
   defaultPlans,
   type BatchTimings,
   type FeaturedEvent,
+  type LapPlan,
+  type PersonalTraining,
   type Plan,
 } from "@/lib/cms";
 import {
@@ -26,8 +30,10 @@ import {
   Instagram,
   MapPin,
   MessageCircle,
+  Menu,
   Phone,
   Sparkles,
+  X,
   UserCheck,
   Zap,
 } from "lucide-react";
@@ -56,35 +62,63 @@ const reveal = {
 };
 
 type SubmissionPayload = {
-  formType: "trial" | "plan_enquiry" | "weight_loss_program";
+  formType: "trial" | "plan_enquiry" | "weight_loss_program" | "personal_training";
   data: Record<string, string>;
 };
 
-async function submitToGoogleSheets(payload: SubmissionPayload): Promise<void> {
+async function submitToGoogleSheets(payload: SubmissionPayload): Promise<{ ok: boolean; message?: string }> {
   try {
-    await fetch("/api/submit", {
+    const response = await fetch("/api/submit", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
     });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      return { ok: false, message: result?.message || "Submission failed." };
+    }
+
+    return { ok: true };
   } catch {
-    // Form submission to WhatsApp should still continue even if sheet write fails.
+    return { ok: false, message: "Submission failed due to network error." };
   }
 }
 
 export default function Home() {
   const [plans, setPlans] = useState<Plan[]>(defaultPlans);
+  const [lapPlans, setLapPlans] = useState<LapPlan[]>(defaultLapPlans);
   const [batchTimings, setBatchTimings] = useState<BatchTimings>(defaultBatchTimings);
   const [featuredEvent, setFeaturedEvent] = useState<FeaturedEvent>(defaultFeaturedEvent);
+  const [personalTraining, setPersonalTraining] = useState<PersonalTraining>(defaultPersonalTraining);
   const [showFeaturedPopup, setShowFeaturedPopup] = useState(false);
   const [showProgramRegistration, setShowProgramRegistration] = useState(false);
   const [selectedProgram, setSelectedProgram] = useState<"7 Days" | "10 Days">("7 Days");
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [showLapRegistration, setShowLapRegistration] = useState(false);
   const [selectedLapProgram, setSelectedLapProgram] = useState<"7 Days" | "10 Days">("7 Days");
+  const [selectedLapPlan, setSelectedLapPlan] = useState<LapPlan | null>(null);
   const [showTrialForm, setShowTrialForm] = useState(false);
+  const [showPtRegistration, setShowPtRegistration] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isClientMounted, setIsClientMounted] = useState(false);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const [ptImageIndex, setPtImageIndex] = useState(0);
+
+  const quickLinks = [
+    { label: "PT", href: "#pt" },
+    { label: "LAP", href: "#lap" },
+    { label: "Fees", href: "#fees" },
+    { label: "Chat", href: "#chat" },
+    { label: "Location", href: "#location" },
+  ];
+
+  const personalTrainingImageCandidates = [personalTraining.imageUrl?.trim(), defaultPersonalTraining.imageUrl].filter(
+    (value, index, array): value is string => Boolean(value) && array.indexOf(value) === index
+  );
+  const personalTrainingImageSrc = personalTrainingImageCandidates[ptImageIndex] ?? null;
 
   const visiblePlans = plans.filter((plan) => !plan.inactive);
   const isLapPlan = (plan: Plan) => {
@@ -92,14 +126,49 @@ export default function Home() {
     const attendance = (plan.attendance || "").toLowerCase();
     return name.includes("lap") || attendance.includes("lap");
   };
-  const getLapProgram = (plan: Plan): "7 Days" | "10 Days" => {
-    const content = `${plan.name} ${plan.attendance}`.toLowerCase();
-    return content.includes("10") ? "10 Days" : "7 Days";
+  const getLapProgram = (plan: LapPlan): "7 Days" | "10 Days" => {
+    return Number(plan.numberOfDays) >= 10 ? "10 Days" : "7 Days";
+  };
+  const getLapCutoffTimestamp = (plan: LapPlan): number | null => {
+    if (!plan.startDate) return null;
+    const start = new Date(`${plan.startDate}T00:00:00`).getTime();
+    if (Number.isNaN(start)) return null;
+
+    const cutoffHours = Number(plan.registrationCutoffHours ?? 6);
+    const safeCutoffHours = Number.isFinite(cutoffHours) && cutoffHours > 0 ? cutoffHours : 6;
+    return start - safeCutoffHours * 60 * 60 * 1000;
+  };
+  const getLapRegistrationWindow = (plan: LapPlan) => {
+    const cutoffTs = getLapCutoffTimestamp(plan);
+    if (!cutoffTs) {
+      return { cutoffTs: null as number | null, msLeft: 0, isClosed: !plan.registrationFormEnabled, isEndingSoon: false };
+    }
+
+    const now = nowTick;
+    const msLeft = cutoffTs - now;
+    const endingSoonMs = 24 * 60 * 60 * 1000;
+
+    return {
+      cutoffTs,
+      msLeft,
+      isClosed: !plan.registrationFormEnabled || msLeft <= 0,
+      isEndingSoon: plan.registrationFormEnabled && msLeft > 0 && msLeft <= endingSoonMs,
+    };
+  };
+  const formatTimeLeft = (ms: number) => {
+    if (ms <= 0) return "Closed";
+
+    const totalMinutes = Math.floor(ms / (60 * 1000));
+    const days = Math.floor(totalMinutes / (60 * 24));
+    const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+    const minutes = totalMinutes % 60;
+
+    if (days > 0) return `${days}d ${hours}h`;
+    return `${hours}h ${minutes}m`;
   };
   const membershipPlans = visiblePlans.filter((plan) => !isLapPlan(plan));
-  const lapPlans = plans.filter((plan) => isLapPlan(plan));
-  const liveLapPlans = lapPlans.filter((plan) => !plan.inactive);
-  const upcomingLapPlans = lapPlans.filter((plan) => Boolean(plan.inactive));
+  const liveLapPlans = lapPlans.filter((plan) => plan.status === "live");
+  const upcomingLapPlans = lapPlans.filter((plan) => plan.status === "upcoming");
   const visibleMorningTimings = batchTimings.morning.filter(
     (_, index) => !batchTimings.inactiveTimings?.morning?.[String(index)]
   );
@@ -130,6 +199,14 @@ export default function Home() {
             setShowFeaturedPopup(true);
           }
         }
+
+        if (Array.isArray(result.data.lapPlans) && result.data.lapPlans.length > 0) {
+          setLapPlans(result.data.lapPlans);
+        }
+
+        if (result.data.personalTraining) {
+          setPersonalTraining(result.data.personalTraining);
+        }
       } catch {
         // Keep defaults when CMS is unavailable.
       }
@@ -137,6 +214,22 @@ export default function Home() {
 
     loadCmsData();
   }, []);
+
+  useEffect(() => {
+    setIsClientMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 60 * 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    setPtImageIndex(0);
+  }, [personalTraining.imageUrl]);
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-black text-white">
@@ -150,13 +243,47 @@ export default function Home() {
               Wani&apos;s Club Level Up
             </span>
           </a>
-          <a
-            href="#trial-form"
-            className="rounded-full bg-brand-orange px-4 py-2 text-xs font-semibold text-black transition hover:brightness-110 sm:px-5 sm:py-2.5 sm:text-sm"
-          >
-            Claim Guest Pass
-          </a>
+          <div className="hidden items-center gap-4 md:flex">
+            {quickLinks.map((link) => (
+              <a key={link.href} href={link.href} className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:text-brand-orange">
+                {link.label}
+              </a>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen((prev) => !prev)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/70 text-white transition hover:border-brand-orange md:hidden"
+              aria-label={mobileNavOpen ? "Close quick links" : "Open quick links"}
+              aria-expanded={mobileNavOpen}
+            >
+              {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+            <a
+              href="#trial-form"
+              className="rounded-full bg-brand-orange px-4 py-2 text-xs font-semibold text-black transition hover:brightness-110 sm:px-5 sm:py-2.5 sm:text-sm"
+            >
+              Claim Guest Pass
+            </a>
+          </div>
         </nav>
+        {mobileNavOpen ? (
+          <div className="border-t border-white/10 bg-black/85 px-4 py-3 backdrop-blur-lg md:hidden">
+            <div className="mx-auto flex w-full max-w-6xl flex-wrap gap-2">
+              {quickLinks.map((link) => (
+                <a
+                  key={`mobile-${link.href}`}
+                  href={link.href}
+                  onClick={() => setMobileNavOpen(false)}
+                  className="rounded-full border border-zinc-700 bg-zinc-900/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-zinc-200 transition hover:border-brand-orange hover:text-brand-orange"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </header>
 
       <main id="home" className="mx-auto w-full max-w-6xl px-4 pb-16 pt-10 sm:px-6 lg:px-8">
@@ -261,10 +388,12 @@ export default function Home() {
             </a>
           </div>
           {/* Elfsight Instagram Feed */}
-          <div
-            className="elfsight-app-014a0409-351d-44b8-8917-448010688bcc"
-            data-elfsight-app-lazy
-          />
+          {isClientMounted ? (
+            <div
+              className="elfsight-app-014a0409-351d-44b8-8917-448010688bcc"
+              data-elfsight-app-lazy
+            />
+          ) : null}
         </motion.section>
 
         <motion.section
@@ -365,6 +494,7 @@ export default function Home() {
 
         {/* ── Pricing ── */}
         <motion.section
+          id="fees"
           variants={reveal}
           initial="hidden"
           whileInView="visible"
@@ -376,7 +506,7 @@ export default function Home() {
             💎 Membership <span className="text-brand-orange">Plans</span>
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-zinc-400 sm:text-base">
-            The first 3 plans are for physical attendance at the gym. Online class has a single dedicated plan at ₹1,800.
+              Simple, transparent pricing with no hidden fees. Choose your plan and start your fitness journey today!
           </p>
 
           <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
@@ -430,6 +560,7 @@ export default function Home() {
 
         {/* ── LAP Program Registration ── */}
         <motion.section
+          id="lap"
           variants={reveal}
           initial="hidden"
           whileInView="visible"
@@ -447,17 +578,20 @@ export default function Home() {
 
           {liveLapPlans.length > 0 ? (
             <div className="mt-8">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-400">Live: Registration Open</p>
+              <p className="mb-4 inline-flex items-center rounded-full border border-brand-orange/40 bg-brand-orange/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-brand-orange">
+                Live: Registration Open
+              </p>
               <div className="grid gap-6 md:grid-cols-2">
                 {liveLapPlans.map((plan, index) => {
                   const program = getLapProgram(plan);
+                  const registrationWindow = getLapRegistrationWindow(plan);
                   const label = program === "10 Days" ? "Best Value" : "Quick Start";
                   const cardClass = program === "10 Days"
-                    ? "rounded-2xl border border-brand-orange/50 bg-zinc-900/50 p-6 ring-1 ring-brand-orange/20"
-                    : "rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6";
+                    ? "flex h-full flex-col rounded-2xl border border-brand-orange/50 bg-gradient-to-br from-brand-orange/12 via-zinc-900/88 to-zinc-950 p-6 text-left shadow-[0_18px_40px_rgba(0,0,0,0.24)] ring-1 ring-brand-orange/25"
+                    : "flex h-full flex-col rounded-2xl border border-brand-orange/30 bg-gradient-to-br from-zinc-900 via-zinc-900/96 to-zinc-950 p-6 text-left shadow-[0_18px_40px_rgba(0,0,0,0.22)]";
                   return (
                     <motion.div
-                      key={`${plan.name}-${index}`}
+                      key={`${plan.title}-${index}`}
                       initial={{ opacity: 0, y: 20 }}
                       whileInView={{ opacity: 1, y: 0 }}
                       viewport={{ once: true, amount: 0.3 }}
@@ -465,26 +599,57 @@ export default function Home() {
                       className={cardClass}
                     >
                       <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-orange">{label}</p>
-                      <h3 className="mt-2 text-2xl font-bold text-white">{plan.name}</h3>
-                      <div className="my-4 flex items-baseline gap-1">
-                        <span className="font-display text-4xl text-brand-orange">₹{plan.price}</span>
+                      <h3 className="mt-2 text-2xl font-bold text-white">{plan.title}</h3>
+                      <p className="mt-2 text-xs uppercase tracking-[0.1em] text-zinc-400">
+                        {plan.startDate} to {plan.endDate} • {plan.numberOfDays} days
+                      </p>
+                      {registrationWindow.isEndingSoon ? (
+                        <p className="mt-3 inline-flex animate-pulse items-center rounded-full border border-amber-400/60 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-300">
+                          Registration Ending Soon (within 24 hours)
+                        </p>
+                      ) : null}
+                      {!registrationWindow.isClosed ? (
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.1em] text-white/85">
+                          Registration closes in {formatTimeLeft(registrationWindow.msLeft)}
+                        </p>
+                      ) : null}
+                      <div className="my-4 space-y-1 text-left text-sm text-white">
+                        {plan.pricingMode === "combo" ? (
+                          <p><span className="font-semibold text-brand-orange">Combo:</span> ₹{plan.comboPrice}</p>
+                        ) : (
+                          <>
+                            <p><span className="font-semibold text-brand-orange">LAP Charges:</span> ₹{plan.lapCharges}</p>
+                            <p><span className="font-semibold text-brand-orange">Shake Charges:</span> ₹{plan.shakeCharges}</p>
+                          </>
+                        )}
                       </div>
-                      <ul className="mb-6 space-y-2 text-left text-sm text-zinc-300">
-                        {plan.features.map((feature) => (
-                          <li key={feature} className="flex items-center gap-2">
+                      <p className="mb-3 text-left text-sm text-white/80">{plan.description}</p>
+                      <ul className="mb-4 space-y-2 text-left text-sm text-white/80">
+                        {plan.activities.map((feature) => (
+                          <li key={`${plan.title}-act-${feature}`} className="flex items-center gap-2">
                             <CheckCircle2 size={16} className="text-brand-orange" />
                             {feature}
                           </li>
                         ))}
                       </ul>
+                      <ul className="mb-6 space-y-2 text-left text-sm text-white/80">
+                        {plan.dailyChecklist.map((item) => (
+                          <li key={`${plan.title}-chk-${item}`} className="flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-emerald-400" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
                       <button
+                        disabled={registrationWindow.isClosed}
                         onClick={() => {
                           setSelectedLapProgram(program);
+                          setSelectedLapPlan(plan);
                           setShowLapRegistration(true);
                         }}
-                        className="w-full rounded-xl bg-brand-orange px-4 py-3 font-bold text-black transition hover:brightness-110"
+                        className="mt-auto w-full rounded-xl bg-brand-orange px-4 py-3 font-bold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Register for {program}
+                        {registrationWindow.isClosed ? "Registration Closed" : `Register for ${program}`}
                       </button>
                     </motion.div>
                   );
@@ -495,40 +660,72 @@ export default function Home() {
 
           {upcomingLapPlans.length > 0 ? (
             <div className="mt-8">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-sky-300">Upcoming LAP Sessions</p>
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-brand-orange">Upcoming LAP Sessions</p>
               <div className="grid gap-6 md:grid-cols-2">
                 {upcomingLapPlans.map((plan, index) => {
                   const program = getLapProgram(plan);
+                  const registrationWindow = getLapRegistrationWindow(plan);
                   return (
                     <motion.div
-                      key={`upcoming-${plan.name}-${index}`}
+                      key={`upcoming-${plan.title}-${index}`}
                       initial={{ opacity: 0, y: 20 }}
                       whileInView={{ opacity: 1, y: 0 }}
                       viewport={{ once: true, amount: 0.3 }}
                       transition={{ duration: 0.45, delay: index * 0.1 }}
-                      className="rounded-2xl border border-sky-400/30 bg-zinc-900/40 p-6"
+                      className="rounded-2xl border border-brand-orange/25 bg-gradient-to-br from-brand-orange/10 via-zinc-900/60 to-zinc-950/80 p-6 shadow-[0_14px_40px_rgba(0,0,0,0.24)]"
                     >
-                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sky-300">Upcoming</p>
-                      <h3 className="mt-2 text-2xl font-bold text-white">{plan.name}</h3>
-                      <div className="my-4 flex items-baseline gap-1">
-                        <span className="font-display text-4xl text-brand-orange">₹{plan.price}</span>
+                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-orange">Upcoming</p>
+                      <h3 className="mt-2 text-2xl font-bold text-white">{plan.title}</h3>
+                      <p className="mt-2 text-xs uppercase tracking-[0.1em] text-zinc-400">
+                        Starts {plan.startDate} • {plan.numberOfDays} days
+                      </p>
+                      {registrationWindow.isEndingSoon ? (
+                        <p className="mt-3 inline-flex animate-pulse items-center rounded-full border border-amber-400/60 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-300">
+                          Registration Ending Soon (within 24 hours)
+                        </p>
+                      ) : null}
+                      {!registrationWindow.isClosed ? (
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.1em] text-zinc-300">
+                          Registration closes in {formatTimeLeft(registrationWindow.msLeft)}
+                        </p>
+                      ) : null}
+                      <div className="my-4 space-y-1 text-left text-sm text-zinc-200">
+                        {plan.pricingMode === "combo" ? (
+                          <p><span className="font-semibold text-brand-orange">Combo:</span> ₹{plan.comboPrice}</p>
+                        ) : (
+                          <>
+                            <p><span className="font-semibold text-brand-orange">LAP Charges:</span> ₹{plan.lapCharges}</p>
+                            <p><span className="font-semibold text-brand-orange">Shake Charges:</span> ₹{plan.shakeCharges}</p>
+                          </>
+                        )}
                       </div>
-                      <ul className="mb-6 space-y-2 text-left text-sm text-zinc-300">
-                        {plan.features.map((feature) => (
-                          <li key={feature} className="flex items-center gap-2">
+                      <p className="mb-3 text-left text-sm text-zinc-300">{plan.description}</p>
+                      <ul className="mb-4 space-y-2 text-left text-sm text-zinc-300">
+                        {plan.activities.map((feature) => (
+                          <li key={`${plan.title}-up-act-${feature}`} className="flex items-center gap-2">
                             <CheckCircle2 size={16} className="text-brand-orange" />
                             {feature}
                           </li>
                         ))}
                       </ul>
+                      <ul className="mb-6 space-y-2 text-left text-sm text-zinc-300">
+                        {plan.dailyChecklist.map((item) => (
+                          <li key={`${plan.title}-up-chk-${item}`} className="flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-emerald-400" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
                       <button
+                        disabled={registrationWindow.isClosed}
                         onClick={() => {
                           setSelectedLapProgram(program);
+                          setSelectedLapPlan(plan);
                           setShowLapRegistration(true);
                         }}
-                        className="w-full rounded-xl border border-sky-300 bg-sky-300/10 px-4 py-3 font-bold text-sky-200 transition hover:bg-sky-300/20"
+                        className="w-full rounded-xl border border-brand-orange/60 bg-brand-orange px-4 py-3 font-bold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Book for Upcoming LAP Session
+                        {registrationWindow.isClosed ? "Registration Closed" : "Book for Upcoming LAP Session"}
                       </button>
                     </motion.div>
                   );
@@ -549,11 +746,79 @@ export default function Home() {
           ) : null}
         </motion.section>
 
+        {personalTraining.enabled ? (
+          <motion.section
+            id="pt"
+            variants={reveal}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="my-12 overflow-hidden rounded-3xl border border-brand-orange/30 bg-gradient-to-br from-brand-orange/10 via-zinc-900/60 to-zinc-950/85"
+          >
+            <div className="grid gap-0 md:grid-cols-2">
+              <div className="relative min-h-[280px] md:min-h-full">
+                {personalTrainingImageSrc ? (
+                  <Image
+                    src={personalTrainingImageSrc}
+                    alt={personalTraining.title}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, 50vw"
+                    onError={() => {
+                      setPtImageIndex((current) => current + 1);
+                    }}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,rgba(255,125,0,0.28),transparent_45%),linear-gradient(180deg,rgba(24,24,27,0.92),rgba(9,9,11,0.98))] px-6 text-center">
+                    <Heart className="mb-4 text-brand-orange" size={36} />
+                    <p className="font-display text-3xl uppercase tracking-wide text-white">
+                      {personalTraining.title}
+                    </p>
+                    <p className="mt-2 max-w-sm text-sm text-zinc-300">
+                      Personal coaching built around your transformation goals.
+                    </p>
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+              </div>
+
+              <div className="p-6 sm:p-8">
+                <p className="inline-flex items-center gap-2 rounded-full border border-brand-orange/40 bg-brand-orange/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-brand-orange">
+                  1-on-1 Elite Coaching
+                </p>
+                <h2 className="mt-4 font-display text-3xl uppercase tracking-wide text-white sm:text-4xl">
+                  {personalTraining.title}
+                </h2>
+                <p className="mt-3 text-sm text-zinc-300 sm:text-base">{personalTraining.description}</p>
+                <p className="mt-4 text-3xl font-bold text-brand-orange">Rs {personalTraining.price}</p>
+
+                <ul className="mt-5 space-y-2 text-sm text-zinc-200">
+                  {personalTraining.features.map((feature) => (
+                    <li key={feature} className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-brand-orange" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPtRegistration(true)}
+                  className="mt-6 w-full rounded-xl bg-brand-orange px-4 py-3 font-bold text-black transition hover:brightness-110"
+                >
+                  {personalTraining.ctaText || "Book Personal Training"}
+                </button>
+              </div>
+            </div>
+          </motion.section>
+        ) : null}
+
         {/* ── FAQ Chat ── */}
         <FaqChatSection />
 
         {/* ── Trial Form ── */}
-        <TrialForm />
+        <TrialForm batchOptions={[...visibleMorningTimings, ...visibleEveningTimings]} />
 
         {/* ── Reviews ── */}
         <Reviews />
@@ -598,7 +863,17 @@ export default function Home() {
       <LapRegistrationModal
         open={showLapRegistration}
         initialProgram={selectedLapProgram}
-        onClose={() => setShowLapRegistration(false)}
+        selectedPlan={selectedLapPlan}
+        onClose={() => {
+          setShowLapRegistration(false);
+          setSelectedLapPlan(null);
+        }}
+      />
+
+      <PersonalTrainingModal
+        open={showPtRegistration}
+        personalTraining={personalTraining}
+        onClose={() => setShowPtRegistration(false)}
       />
 
       <PlanEnquiryModal selectedPlan={selectedPlan} onClose={() => setSelectedPlan(null)} />
@@ -799,6 +1074,7 @@ type ProgramRegistrationModalProps = {
 function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: ProgramRegistrationModalProps) {
   const [formData, setFormData] = useState({
     name: "",
+    email: "",
     phone: "",
     goal: "",
     program: initialProgram,
@@ -809,6 +1085,7 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
     if (!open) return;
     setFormData({
       name: "",
+      email: "",
       phone: "",
       goal: "",
       program: initialProgram,
@@ -830,10 +1107,11 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
     e.preventDefault();
     setIsSubmitting(true);
 
-    await submitToGoogleSheets({
+    const submitResult = await submitToGoogleSheets({
       formType: "weight_loss_program",
       data: {
         name: formData.name,
+        email: formData.email,
         phone: formData.phone,
         goal: formData.goal || "Not specified",
         program: formData.program,
@@ -842,7 +1120,7 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
     });
 
     const msg = encodeURIComponent(
-      `Hi Coach Sayali! 👋\n\nI want to register for the ${formData.program} Weight Loss Program (additional cost).\n\nName: ${formData.name}\nPhone: ${formData.phone}\nGoal: ${formData.goal || "Not specified"}\n\nPlease share full details and fee structure.`
+      `Hi Coach Sayali! 👋\n\nI want to register for the ${formData.program} Weight Loss Program (additional cost).\n\nName: ${formData.name}\nEmail: ${formData.email}\nPhone: ${formData.phone}\nGoal: ${formData.goal || "Not specified"}\n\nPlease share full details and fee structure.`
     );
 
     window.open(`https://wa.me/919158243377?text=${msg}`, "_blank");
@@ -880,6 +1158,15 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
             placeholder="Full Name"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+          />
+
+          <input
+            required
+            type="email"
+            placeholder="Email Address"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           />
 
@@ -926,10 +1213,11 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
 type LapRegistrationModalProps = {
   open: boolean;
   initialProgram: "7 Days" | "10 Days";
+  selectedPlan: LapPlan | null;
   onClose: () => void;
 };
 
-function LapRegistrationModal({ open, initialProgram, onClose }: LapRegistrationModalProps) {
+function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: LapRegistrationModalProps) {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -971,21 +1259,35 @@ function LapRegistrationModal({ open, initialProgram, onClose }: LapRegistration
     e.preventDefault();
     setIsSubmitting(true);
 
-    await submitToGoogleSheets({
+    const submitResult = await submitToGoogleSheets({
       formType: "weight_loss_program",
       data: {
-        planName: `LAP - ${formData.program}`,
-        planPrice: formData.program === "7 Days" ? "4,999" : "6,999",
+        planName: selectedPlan?.title || `LAP - ${formData.program}`,
+        planPrice: selectedPlan?.pricingMode === "combo"
+          ? String(selectedPlan.comboPrice || "")
+          : String(selectedPlan?.lapCharges || ""),
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
         age: formData.age,
         goal: formData.goal || "Not specified",
         program: `LAP ${formData.program}`,
+        startDate: selectedPlan?.startDate || "",
+        endDate: selectedPlan?.endDate || "",
+        numberOfDays: String(selectedPlan?.numberOfDays || ""),
+        lapCharges: selectedPlan?.lapCharges || "",
+        shakeCharges: selectedPlan?.shakeCharges || "",
+        comboPrice: selectedPlan?.comboPrice || "",
         currentWeight: formData.currentWeight,
         targetWeight: formData.targetWeight,
       },
     });
+
+    if (!submitResult.ok) {
+      alert(submitResult.message || "Registration is currently unavailable for this LAP session.");
+      setIsSubmitting(false);
+      return;
+    }
 
     const msg = encodeURIComponent(
       `Hi Coach Sayali! 👋\n\nI want to register for the *LAP ${formData.program} Program*.\n\n*Personal Details*\nName: ${formData.name}\nEmail: ${formData.email}\nPhone: ${formData.phone}\nAge: ${formData.age}\n\n*Weight Loss Info*\nCurrent Weight: ${formData.currentWeight} kg\nTarget Weight: ${formData.targetWeight} kg\nGoal: ${formData.goal || "Not specified"}\n\nPlease share the full program details, shake options, and fee structure. Thank you!`
@@ -1008,10 +1310,12 @@ function LapRegistrationModal({ open, initialProgram, onClose }: LapRegistration
           <div>
             <p className="text-xs uppercase tracking-[0.14em] text-brand-orange">LAP Program Registration</p>
             <h3 className="mt-1 text-xl font-bold text-white">
-              LAP - {formData.program}
+              {selectedPlan?.title || `LAP - ${formData.program}`}
               <br />
               <span className="text-brand-orange">
-                {formData.program === "7 Days" ? "₹4,999" : "₹6,999"}
+                {selectedPlan?.pricingMode === "combo"
+                  ? `₹${selectedPlan.comboPrice}`
+                  : `₹${selectedPlan?.lapCharges || (formData.program === "7 Days" ? "4,999" : "6,999")}`}
               </span>
             </h3>
             <p className="mt-1 text-sm text-zinc-300">Meal replacement shakes + personalized diet coaching.</p>
@@ -1112,6 +1416,169 @@ type PlanEnquiryModalProps = {
   onClose: () => void;
 };
 
+type PersonalTrainingModalProps = {
+  open: boolean;
+  personalTraining: PersonalTraining;
+  onClose: () => void;
+};
+
+function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrainingModalProps) {
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    goal: "",
+    preferredSlot: "Morning",
+    notes: "",
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      goal: "",
+      preferredSlot: "Morning",
+      notes: "",
+    });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    await submitToGoogleSheets({
+      formType: "personal_training",
+      data: {
+        planName: personalTraining.title,
+        planPrice: personalTraining.price,
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        goal: formData.goal || "Not specified",
+        preferredSlot: formData.preferredSlot,
+        notes: formData.notes || "None",
+      },
+    });
+
+    const msg = encodeURIComponent(
+      `Hi Coach Sayali! 👋\n\nI want to enroll in ${personalTraining.title} (Rs ${personalTraining.price}).\n\nName: ${formData.name}\nEmail: ${formData.email}\nPhone: ${formData.phone}\nPreferred Slot: ${formData.preferredSlot}\nGoal: ${formData.goal || "Not specified"}\nNotes: ${formData.notes || "None"}\n\nPlease share next steps and payment details.`
+    );
+
+    window.open(`https://wa.me/919158243377?text=${msg}`, "_blank");
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[102] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+        className="w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)]"
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-brand-orange">Personal Training</p>
+            <h3 className="mt-1 text-xl font-bold text-white">
+              {personalTraining.title}
+              <br />
+              <span className="text-brand-orange">Rs {personalTraining.price}</span>
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
+          >
+            Close
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              required
+              type="text"
+              placeholder="Full Name"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+            <input
+              required
+              type="email"
+              placeholder="Email Address"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              required
+              type="tel"
+              inputMode="numeric"
+              placeholder="Phone Number"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            />
+            <select
+              value={formData.preferredSlot}
+              onChange={(e) => setFormData({ ...formData, preferredSlot: e.target.value })}
+              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+            >
+              <option>Morning</option>
+              <option>Evening</option>
+              <option>Flexible</option>
+            </select>
+          </div>
+
+          <textarea
+            rows={3}
+            placeholder="Your primary fitness goal"
+            value={formData.goal}
+            onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+          />
+
+          <textarea
+            rows={2}
+            placeholder="Additional notes (optional)"
+            value={formData.notes}
+            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
+          />
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
+          >
+            {isSubmitting ? "Submitting..." : personalTraining.ctaText || "Book Personal Training"}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
 function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
   const [formData, setFormData] = useState({
     name: "",
@@ -1152,6 +1619,10 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
     e.preventDefault();
     setIsSubmitting(true);
 
+    // Open immediately during user interaction to avoid popup blockers.
+    const phone = "919158243377";
+    const waWindow = window.open("about:blank", "_blank");
+
     await submitToGoogleSheets({
       formType: "plan_enquiry",
       data: {
@@ -1167,12 +1638,16 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
       },
     });
 
-    const phone = "919158243377";
     const msg = encodeURIComponent(
       `Hi Coach Sayali! 👋\n\nI want to enroll in a membership plan.\n\n*Selected Plan:* ${selectedPlan.name} (₹${selectedPlan.price})\n\n*Customer Details*\nName: ${formData.name}\nEmail: ${formData.email}\nPhone: ${formData.phone}\nAge: ${formData.age}\nGender: ${formData.gender}\nStrength Level: ${formData.strengthLevel}\nImportant Notes: ${formData.notes || "None"}\n\nPlease share the payment link to proceed. Thank you!`
     );
 
-    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+    const waUrl = `https://wa.me/${phone}?text=${msg}`;
+    if (waWindow && !waWindow.closed) {
+      waWindow.location.href = waUrl;
+    } else {
+      window.open(waUrl, "_blank");
+    }
     setIsSubmitting(false);
     onClose();
   };
@@ -1292,9 +1767,27 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
 }
 
 /* ── Trial Form Component ── */
-function TrialForm() {
-  const [formData, setFormData] = useState({ name: "", goal: "", batch: "6:00 AM – 7:00 AM" });
+type TrialFormProps = {
+  batchOptions: string[];
+};
+
+function TrialForm({ batchOptions }: TrialFormProps) {
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    goal: "Weight Loss",
+    batch: batchOptions[0] || "6:00 AM – 7:00 AM",
+  });
   const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (batchOptions.length === 0) return;
+    setFormData((prev) => ({
+      ...prev,
+      batch: prev.batch || batchOptions[0],
+    }));
+  }, [batchOptions]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1303,6 +1796,8 @@ function TrialForm() {
       formType: "trial",
       data: {
         name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
         goal: formData.goal || "Not specified",
         batch: formData.batch,
       },
@@ -1310,7 +1805,7 @@ function TrialForm() {
 
     const phone = "919158243377";
     const msg = encodeURIComponent(
-      `Hi Coach Sayali! 🔥\n\nI want to claim my *FREE 2-DAY TRIAL* at Wani's Club Level Up.\n\n*Name:* ${formData.name}\n*Fitness Goal:* ${formData.goal || "Not specified"}\n*Preferred Batch:* ${formData.batch}\n\nSee you at the gym!`
+      `Hi Coach Sayali! 🔥\n\nI want to claim my *FREE 2-DAY TRIAL* at Wani's Club Level Up.\n\n*Name:* ${formData.name}\n*Mobile:* ${formData.phone}\n*Email:* ${formData.email}\n*Fitness Goal:* ${formData.goal || "Not specified"}\n*Preferred Batch:* ${formData.batch}\n\nSee you at the gym!`
     );
     window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
     setSubmitted(true);
@@ -1349,31 +1844,63 @@ function TrialForm() {
             <input
               required
               type="text"
+              value={formData.name}
               placeholder="Enter your name"
               className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             />
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm text-zinc-400">Mobile Number</label>
+              <input
+                required
+                type="tel"
+                inputMode="numeric"
+                value={formData.phone}
+                placeholder="Enter mobile number"
+                className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-zinc-400">Email</label>
+              <input
+                required
+                type="email"
+                value={formData.email}
+                placeholder="Enter your email"
+                className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              />
+            </div>
+          </div>
           <div>
             <label className="mb-1 block text-sm text-zinc-400">Fitness Goal</label>
-            <input
-              type="text"
-              placeholder="e.g. Weight loss, Strength"
+            <select
+              required
+              value={formData.goal}
               className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
               onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
-            />
+            >
+              <option>Weight Loss</option>
+              <option>Fat Loss</option>
+              <option>Muscle Gain</option>
+              <option>Strength Training</option>
+              <option>General Fitness</option>
+              <option>Mobility and Flexibility</option>
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-sm text-zinc-400">Preferred Batch</label>
             <select
+              value={formData.batch}
               className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
               onChange={(e) => setFormData({ ...formData, batch: e.target.value })}
             >
-              <option>6:00 AM – 7:00 AM</option>
-              <option>7:00 AM – 8:00 AM</option>
-              <option>8:00 AM – 9:00 AM</option>
-              <option>5:00 PM – 6:00 PM</option>
-              <option>7:00 PM – 8:00 PM</option>
+              {(batchOptions.length > 0 ? batchOptions : ["6:00 AM – 7:00 AM", "7:00 AM – 8:00 AM", "8:00 AM – 9:00 AM", "5:00 PM – 6:00 PM", "7:00 PM – 8:00 PM"]).map((batch) => (
+                <option key={batch}>{batch}</option>
+              ))}
             </select>
             <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
               <span className="mt-0.5 text-base leading-none">⚠️</span>
@@ -1412,7 +1939,7 @@ function Reviews() {
 /* ── Site Footer ── */
 function SiteFooter() {
   return (
-    <footer id="contact" className="border-t border-zinc-800 bg-black px-6 pb-8 pt-16">
+    <footer id="location" className="border-t border-zinc-800 bg-black px-6 pb-8 pt-16">
       <div className="mx-auto mb-12 grid max-w-6xl gap-12 md:grid-cols-2">
         {/* Left */}
         <div>
@@ -1441,6 +1968,15 @@ function SiteFooter() {
                 className="transition-colors hover:text-brand-orange"
               >
                 9158243377 — Coach Sayali Wani
+              </a>
+            </p>
+            <p className="flex items-center gap-3 text-zinc-300">
+              <UserCheck className="shrink-0 text-brand-orange" size={18} />
+              <a
+                href="/admin-login"
+                className="transition-colors hover:text-brand-orange"
+              >
+                Admin Login
               </a>
             </p>
           </div>

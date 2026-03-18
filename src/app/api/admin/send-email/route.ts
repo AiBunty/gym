@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyAdminToken } from "@/lib/adminAuth";
+import { applyTemplate, createTransporter, loadEmailConfigFromCms } from "@/lib/email";
 
 export async function POST(request: Request) {
   try {
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { recipientEmails, subject, message, audienceSource } = payload;
+    const { recipientEmails, subject, message, html, audienceSource } = payload;
 
     if (!recipientEmails || !Array.isArray(recipientEmails) || recipientEmails.length === 0) {
       return NextResponse.json(
@@ -27,32 +28,39 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!subject || !message) {
+    if (!subject || (!message && !html)) {
       return NextResponse.json(
         {
           ok: false,
-          message: "Subject and message are required.",
+          message: "Subject and message/html are required.",
         },
         { status: 400 }
       );
     }
 
-    // For now, simulate email sending
-    // In production, integrate with Nodemailer or SendGrid
-    console.log("Email notification:");
-    console.log(`By: ${verification.payload.username}`);
-    console.log(`Audience: ${audienceSource || "custom"}`);
-    console.log(`To: ${recipientEmails.join(", ")}`);
-    console.log(`Subject: ${subject}`);
-    console.log(`Message: ${message}`);
+    const { emailSettings } = await loadEmailConfigFromCms();
+    const transporter = await createTransporter(emailSettings);
+
+    const fromDisplay = emailSettings.fromName?.trim() || "Wani's Club Level Up";
+    const fromEmail = emailSettings.fromEmail?.trim() || emailSettings.user;
+
+    const sendResult = await transporter.sendMail({
+      from: `${fromDisplay} <${fromEmail}>`,
+      to: recipientEmails.join(","),
+      subject,
+      text: applyTemplate(String(message || ""), {}),
+      html: html ? applyTemplate(String(html), {}) : undefined,
+    });
 
     return NextResponse.json({
       ok: true,
-      message: `Email would be sent to ${recipientEmails.length} recipient(s).`,
+      message: `Email sent to ${recipientEmails.length} recipient(s).`,
       details: {
+        by: verification.payload.username,
+        audience: audienceSource || "custom",
         recipientCount: recipientEmails.length,
         subject,
-        messageLength: message.length,
+        messageId: sendResult.messageId,
       },
     });
   } catch (error) {
