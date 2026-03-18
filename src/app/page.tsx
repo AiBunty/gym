@@ -539,8 +539,19 @@ function SiteFooter() {
         </div>
       </div>
 
-      <div className="border-t border-zinc-900 pt-8 text-center text-sm text-zinc-500">
-        © 2026 Wani&apos;s Club Level Up. All Rights Reserved.
+      <div className="border-t border-zinc-900 pt-8 text-center text-sm text-zinc-500 space-y-1.5">
+        <p>© 2026 Wani&apos;s Club Level Up. All Rights Reserved.</p>
+        <p>
+          Created by{" "}
+          <a
+            href="https://www.dcoresystems.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand-orange transition-colors hover:brightness-125"
+          >
+            www.dcoresystems.com
+          </a>
+        </p>
       </div>
     </footer>
   );
