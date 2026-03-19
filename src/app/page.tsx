@@ -1081,9 +1081,11 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
     program: initialProgram,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitDone, setSubmitDone] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setSubmitDone(false);
     setFormData({
       name: "",
       email: "",
@@ -1126,7 +1128,8 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
 
     window.open(`https://wa.me/919158243377?text=${msg}`, "_blank");
     setIsSubmitting(false);
-    onClose();
+    setSubmitDone(true);
+    setTimeout(() => onClose(), 1600);
   };
 
   return (
@@ -1153,7 +1156,11 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
           </button>
         </div>
 
-        {isSubmitting ? (
+        {submitDone ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+            <CheckCircle2 size={16} className="shrink-0" /> Registered! WhatsApp is opening with your details.
+          </div>
+        ) : isSubmitting ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
             <Loader2 size={16} className="animate-spin" /> Sending your program request...
           </div>
@@ -1243,9 +1250,11 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
     targetWeight: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitDone, setSubmitDone] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setSubmitDone(false);
     setFormData({
       name: "",
       email: "",
@@ -1309,7 +1318,8 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
 
     window.open(`https://wa.me/919158243377?text=${msg}`, "_blank");
     setIsSubmitting(false);
-    onClose();
+    setSubmitDone(true);
+    setTimeout(() => onClose(), 1600);
   };
 
   return (
@@ -1344,7 +1354,11 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
           </button>
         </div>
 
-        {isSubmitting ? (
+        {submitDone ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+            <CheckCircle2 size={16} className="shrink-0" /> Registered! WhatsApp is opening with your details.
+          </div>
+        ) : isSubmitting ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
             <Loader2 size={16} className="animate-spin" /> Registering you for this LAP session...
           </div>
@@ -1461,9 +1475,11 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
     notes: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitDone, setSubmitDone] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setSubmitDone(false);
     setFormData({
       name: "",
       email: "",
@@ -1509,7 +1525,8 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
 
     window.open(`https://wa.me/919158243377?text=${msg}`, "_blank");
     setIsSubmitting(false);
-    onClose();
+    setSubmitDone(true);
+    setTimeout(() => onClose(), 1600);
   };
 
   return (
@@ -1539,7 +1556,11 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
           </button>
         </div>
 
-        {isSubmitting ? (
+        {submitDone ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+            <CheckCircle2 size={16} className="shrink-0" /> Submitted! WhatsApp is opening with your details.
+          </div>
+        ) : isSubmitting ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
             <Loader2 size={16} className="animate-spin" /> Saving your PT enquiry...
           </div>
@@ -1633,9 +1654,11 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
     notes: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitDone, setSubmitDone] = useState(false);
 
   useEffect(() => {
     if (!selectedPlan) return;
+    setSubmitDone(false);
     setFormData({
       name: "",
       email: "",
@@ -1692,7 +1715,8 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
       window.open(waUrl, "_blank");
     }
     setIsSubmitting(false);
-    onClose();
+    setSubmitDone(true);
+    setTimeout(() => onClose(), 1600);
   };
 
   return (
@@ -1724,7 +1748,11 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
           </button>
         </div>
 
-        {isSubmitting ? (
+        {submitDone ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+            <CheckCircle2 size={16} className="shrink-0" /> Submitted! WhatsApp is opening with your details.
+          </div>
+        ) : isSubmitting ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
             <Loader2 size={16} className="animate-spin" /> Creating your plan enquiry...
           </div>

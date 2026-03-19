@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { defaultBatchTimings, defaultEmailSettings, defaultEmailTemplates, defaultFeaturedEvent, defaultLapPlans, defaultPersonalTraining, defaultPlans, type CmsData, type LapPlan, type Plan } from "@/lib/cms";
-import { Plus, Trash2, Save, RefreshCw, Mail, BarChart3, Download, LogOut, ToggleLeft, ToggleRight, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Plus, Trash2, Save, RefreshCw, Mail, BarChart3, Download, LogOut, ToggleLeft, ToggleRight, Eye, EyeOff, Loader2, CheckCircle2, X } from "lucide-react";
 
 const defaultData: CmsData = {
   pricingPlans: defaultPlans,
@@ -450,6 +450,7 @@ export default function AdminPage() {
   const [isSendingUnpaidReminders, setIsSendingUnpaidReminders] = useState(false);
   const [statusUpdatingRow, setStatusUpdatingRow] = useState<number | null>(null);
   const [deletingRows, setDeletingRows] = useState<string[]>([]);
+  const [successRows, setSuccessRows] = useState<string[]>([]);
 
   const getDeleteRowKey = (sheetName: string, rowIndex: number) => `${sheetName}:${Number(rowIndex)}`;
 
@@ -465,6 +466,34 @@ export default function AdminPage() {
 
   const isRowDeleting = (sheetName: string, rowIndex: number) =>
     deletingRows.includes(getDeleteRowKey(sheetName, rowIndex));
+
+  const markRowSuccess = (sheetName: string, rowIndex: number) => {
+    const rowKey = getDeleteRowKey(sheetName, rowIndex);
+    setSuccessRows((prev) => (prev.includes(rowKey) ? prev : [...prev, rowKey]));
+  };
+
+  const clearRowSuccess = (sheetName: string, rowIndex: number) => {
+    const rowKey = getDeleteRowKey(sheetName, rowIndex);
+    setSuccessRows((prev) => prev.filter((value) => value !== rowKey));
+  };
+
+  const isRowSuccess = (sheetName: string, rowIndex: number) =>
+    successRows.includes(getDeleteRowKey(sheetName, rowIndex));
+
+  const statusType: "success" | "error" | "info" | "" = statusMessage
+    ? /fail|error|expired|invalid|must be|not saved|could not|network|unable|no .* found/i.test(statusMessage)
+      ? "error"
+      : /saved|deleted|initialized|loaded|sent|confirmed|updated|applied|success|marked as/i.test(statusMessage)
+      ? "success"
+      : "info"
+    : "";
+
+  // Auto-dismiss status toast after 4.5 s
+  useEffect(() => {
+    if (!statusMessage) return;
+    const t = setTimeout(() => setStatusMessage(""), 4500);
+    return () => clearTimeout(t);
+  }, [statusMessage]);
 
   const activeAsyncLabel =
     deletingRows.length > 0 ? "Updating rows..." :
@@ -859,7 +888,12 @@ export default function AdminPage() {
         return;
       }
       if (result?.ok) {
-        setTrialUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(rowIndex)));
+        markRowSuccess("Trial Users", rowIndex);
+        const capturedIndex = rowIndex;
+        setTimeout(() => {
+          setTrialUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(capturedIndex)));
+          clearRowSuccess("Trial Users", capturedIndex);
+        }, 700);
         setStatusMessage("Trial user deleted.");
       } else {
         setStatusMessage(result?.message || "Failed to delete user.");
@@ -955,7 +989,12 @@ export default function AdminPage() {
         return;
       }
       if (result?.ok) {
-        setPtUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(rowIndex)));
+        markRowSuccess("Personal Training", rowIndex);
+        const capturedPtIndex = rowIndex;
+        setTimeout(() => {
+          setPtUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(capturedPtIndex)));
+          clearRowSuccess("Personal Training", capturedPtIndex);
+        }, 700);
         setStatusMessage("PT lead deleted.");
       } else {
         setStatusMessage(result?.message || "Failed to delete PT lead.");
@@ -1087,9 +1126,14 @@ export default function AdminPage() {
         return;
       }
       if (result?.ok) {
-        setPaymentUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(rowIndex)));
-        setRegistrations((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(rowIndex)));
-        setExpandedLapRows((prev) => prev.filter((value) => value !== Number(rowIndex)));
+        markRowSuccess("Submissions", rowIndex);
+        const capturedPayIndex = rowIndex;
+        setTimeout(() => {
+          setPaymentUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(capturedPayIndex)));
+          setRegistrations((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(capturedPayIndex)));
+          setExpandedLapRows((prev) => prev.filter((value) => value !== Number(capturedPayIndex)));
+          clearRowSuccess("Submissions", capturedPayIndex);
+        }, 700);
         setStatusMessage("Payment user deleted.");
       } else {
         setStatusMessage(result?.message || "Failed to delete user.");
@@ -1125,9 +1169,14 @@ export default function AdminPage() {
       }
 
       if (result?.ok) {
-        setRegistrations((prev) => prev.filter((row) => Number(row?.rowIndex) !== Number(rowIndex)));
-        setPaymentUsers((prev) => prev.filter((row) => Number(row?.rowIndex) !== Number(rowIndex)));
-        setExpandedLapRows((prev) => prev.filter((value) => value !== Number(rowIndex)));
+        markRowSuccess("Submissions", rowIndex);
+        const capturedLapIndex = rowIndex;
+        setTimeout(() => {
+          setRegistrations((prev) => prev.filter((row) => Number(row?.rowIndex) !== Number(capturedLapIndex)));
+          setPaymentUsers((prev) => prev.filter((row) => Number(row?.rowIndex) !== Number(capturedLapIndex)));
+          setExpandedLapRows((prev) => prev.filter((value) => value !== Number(capturedLapIndex)));
+          clearRowSuccess("Submissions", capturedLapIndex);
+        }, 700);
         setStatusMessage("LAP registration deleted.");
       } else {
         setStatusMessage(result?.message || "Failed to delete LAP registration.");
@@ -1274,6 +1323,7 @@ export default function AdminPage() {
   }
 
   return (
+    <>
     <main className="admin-high-contrast min-h-screen bg-zinc-950 px-4 py-8 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-8">
         <header className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
@@ -1412,8 +1462,6 @@ export default function AdminPage() {
               <Loader2 size={16} className="animate-spin" /> {activeAsyncLabel}
             </div>
           ) : null}
-
-          {statusMessage ? <p className="mt-3 text-sm text-zinc-300">{statusMessage}</p> : null}
         </header>
 
         {/* Tab Navigation */}
@@ -2221,11 +2269,19 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-zinc-700">
                     {trialLoading ? (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">
-                          <span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading...</span>
-                        </td>
-                      </tr>
+                      <>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <tr key={`trial-skel-${i}`} className="animate-pulse">
+                            <td className="px-4 py-3"><div className="h-4 w-20 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-28 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-36 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-24 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-8 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-28 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-14 rounded bg-zinc-800" /></td>
+                          </tr>
+                        ))}
+                      </>
                     ) : filterTrialUsers().length === 0 ? (
                       <tr>
                         <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">
@@ -2240,7 +2296,7 @@ export default function AdminPage() {
                         return (
                         <tr
                           key={`trial-${String(user?.rowIndex ?? idx)}`}
-                          className={`transition ${isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
+                          className={`transition ${isRowSuccess("Trial Users", trialRowIndex) ? "bg-emerald-500/10" : isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
                         >
                           <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt).toLocaleDateString()}</td>
                           <td className="px-4 py-3 text-zinc-300">{user.name}</td>
@@ -2341,11 +2397,20 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-zinc-700">
                     {paymentLoading ? (
-                      <tr>
-                        <td colSpan={8} className="px-4 py-4 text-center text-zinc-400">
-                          <span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading...</span>
-                        </td>
-                      </tr>
+                      <>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <tr key={`pay-skel-${i}`} className="animate-pulse">
+                            <td className="px-4 py-3"><div className="h-4 w-20 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-28 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-36 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-24 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-24 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-16 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-6 w-14 rounded-full bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-14 rounded bg-zinc-800" /></td>
+                          </tr>
+                        ))}
+                      </>
                     ) : filterPaymentUsers().length === 0 ? (
                       <tr>
                         <td colSpan={8} className="px-4 py-4 text-center text-zinc-400">
@@ -2360,7 +2425,7 @@ export default function AdminPage() {
                         return (
                         <tr
                           key={`payment-${String(user?.rowIndex ?? idx)}`}
-                          className={`transition ${isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
+                          className={`transition ${isRowSuccess("Submissions", paymentRowIndex) ? "bg-emerald-500/10" : isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
                         >
                           <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt).toLocaleDateString()}</td>
                           <td className="px-4 py-3 text-zinc-300">{user.name}</td>
@@ -2461,9 +2526,19 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-zinc-700">
                     {ptLoading ? (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading PT leads...</span></td>
-                      </tr>
+                      <>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <tr key={`pt-skel-${i}`} className="animate-pulse">
+                            <td className="px-4 py-3"><div className="h-4 w-20 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-28 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-36 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-24 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-20 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-28 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-14 rounded bg-zinc-800" /></td>
+                          </tr>
+                        ))}
+                      </>
                     ) : ptUsers.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">No PT leads yet. Click reload to fetch data.</td>
@@ -2476,7 +2551,7 @@ export default function AdminPage() {
                         return (
                         <tr
                           key={`pt-${String(user?.rowIndex ?? idx)}`}
-                          className={`transition ${isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
+                          className={`transition ${isRowSuccess("Personal Training", ptRowIndex) ? "bg-emerald-500/10" : isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
                         >
                           <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt || user.timestamp).toLocaleDateString()}</td>
                           <td className="px-4 py-3 text-zinc-300">{user.name}</td>
@@ -2586,11 +2661,19 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-zinc-700">
                     {registrationsLoading ? (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">
-                          <span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading registrations...</span>
-                        </td>
-                      </tr>
+                      <>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <tr key={`reg-skel-${i}`} className="animate-pulse">
+                            <td className="px-4 py-3"><div className="h-4 w-20 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-28 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-36 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-24 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-24 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-16 rounded bg-zinc-800" /></td>
+                            <td className="px-4 py-3"><div className="h-4 w-28 rounded bg-zinc-800" /></td>
+                          </tr>
+                        ))}
+                      </>
                     ) : filteredRegistrations.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">
@@ -2718,7 +2801,26 @@ export default function AdminPage() {
               </div>
 
               {registrationsLoading ? (
-                <div className="rounded-lg border border-zinc-700 bg-black/40 p-6 text-center text-zinc-400"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading LAP registrations...</span></div>
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={`lap-skel-${i}`} className="animate-pulse rounded-xl border border-zinc-700 bg-black/30 p-4">
+                      <div className="mb-4 flex items-center justify-between">
+                        <div className="h-5 w-40 rounded bg-zinc-800" />
+                        <div className="h-4 w-24 rounded-full bg-zinc-800" />
+                      </div>
+                      <div className="space-y-2">
+                        {Array.from({ length: 3 }).map((_, j) => (
+                          <div key={j} className="grid grid-cols-4 gap-3">
+                            <div className="h-4 rounded bg-zinc-800" />
+                            <div className="h-4 rounded bg-zinc-800" />
+                            <div className="h-4 rounded bg-zinc-800" />
+                            <div className="h-4 rounded bg-zinc-800" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : getVisibleLapRegistrations().length === 0 ? (
                 <div className="rounded-lg border border-zinc-700 bg-black/40 p-6 text-center text-zinc-400">
                   {registrations.length === 0 ? "No registrations loaded. Click reload to fetch data." : "No LAP registrations found for selected filters."}
@@ -2759,7 +2861,7 @@ export default function AdminPage() {
 
                               return (
                                 <Fragment key={`${eventName}-${rowIndex}-${idx}`}>
-                                  <tr className={`transition ${isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}>
+                                  <tr className={`transition ${(canDelete && isRowSuccess("Submissions", rowIndex)) ? "bg-emerald-500/10" : isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}>
                                     <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt || user.timestamp).toLocaleDateString()}</td>
                                     <td className="px-4 py-3 text-zinc-300">{user.name || "-"}</td>
                                     <td className="px-4 py-3 text-zinc-300 break-words max-w-xs">{user.email || "-"}</td>
@@ -3400,5 +3502,33 @@ export default function AdminPage() {
         )}
       </div>
     </main>
+
+      {/* Global toast notification */}
+      {statusMessage ? (
+        <div
+          className={`fixed bottom-6 right-6 z-[300] flex max-w-sm items-start gap-3 rounded-xl border px-4 py-3 text-sm font-medium shadow-xl ${
+            statusType === "success"
+              ? "border-emerald-500/40 bg-emerald-950 text-emerald-300"
+              : statusType === "error"
+              ? "border-red-500/40 bg-red-950 text-red-300"
+              : "border-zinc-600 bg-zinc-900 text-zinc-200"
+          }`}
+        >
+          {statusType === "success" ? (
+            <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+          ) : statusType === "error" ? (
+            <X size={16} className="mt-0.5 shrink-0" />
+          ) : null}
+          <span className="flex-1 leading-snug">{statusMessage}</span>
+          <button
+            onClick={() => setStatusMessage("")}
+            className="ml-1 shrink-0 opacity-50 transition hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 }
