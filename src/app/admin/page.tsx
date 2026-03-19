@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { defaultBatchTimings, defaultEmailSettings, defaultEmailTemplates, defaultFeaturedEvent, defaultLapPlans, defaultPersonalTraining, defaultPlans, type CmsData, type LapPlan, type Plan } from "@/lib/cms";
-import { Plus, Trash2, Save, RefreshCw, Mail, BarChart3, Download, LogOut, ToggleLeft, ToggleRight, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, Save, RefreshCw, Mail, BarChart3, Download, LogOut, ToggleLeft, ToggleRight, Eye, EyeOff, Loader2 } from "lucide-react";
 
 const defaultData: CmsData = {
   pricingPlans: defaultPlans,
@@ -449,6 +449,38 @@ export default function AdminPage() {
   const [selectedManualTemplatePreset, setSelectedManualTemplatePreset] = useState<"trial" | "plan_enquiry" | "lap">("trial");
   const [isSendingUnpaidReminders, setIsSendingUnpaidReminders] = useState(false);
   const [statusUpdatingRow, setStatusUpdatingRow] = useState<number | null>(null);
+  const [deletingRows, setDeletingRows] = useState<string[]>([]);
+
+  const getDeleteRowKey = (sheetName: string, rowIndex: number) => `${sheetName}:${Number(rowIndex)}`;
+
+  const markRowDeleting = (sheetName: string, rowIndex: number) => {
+    const rowKey = getDeleteRowKey(sheetName, rowIndex);
+    setDeletingRows((prev) => (prev.includes(rowKey) ? prev : [...prev, rowKey]));
+  };
+
+  const clearRowDeleting = (sheetName: string, rowIndex: number) => {
+    const rowKey = getDeleteRowKey(sheetName, rowIndex);
+    setDeletingRows((prev) => prev.filter((value) => value !== rowKey));
+  };
+
+  const isRowDeleting = (sheetName: string, rowIndex: number) =>
+    deletingRows.includes(getDeleteRowKey(sheetName, rowIndex));
+
+  const activeAsyncLabel =
+    deletingRows.length > 0 ? "Updating rows..." :
+    statusUpdatingRow !== null ? "Updating payment status..." :
+    isSendingUnpaidReminders ? "Sending unpaid reminders..." :
+    emailSending ? "Sending email campaign..." :
+    smtpTestLoading ? "Sending SMTP test..." :
+    registrationsLoading ? "Fetching reports..." :
+    trialLoading ? "Fetching trial users..." :
+    paymentLoading ? "Fetching payment users..." :
+    ptLoading ? "Fetching PT leads..." :
+    isInitializingLapTabs ? "Initializing LAP tabs..." :
+    isSavingCredentials ? "Saving admin credentials..." :
+    isSaving ? "Saving CMS changes..." :
+    isLoading ? "Reloading CMS..." :
+    "";
 
   useEffect(() => {
     setEmailRecipients([]);
@@ -806,6 +838,9 @@ export default function AdminPage() {
 
   const deleteTrialUser = async (rowIndex: number) => {
     if (!confirm("Are you sure you want to delete this trial user?")) return;
+    if (isRowDeleting("Trial Users", rowIndex)) return;
+
+    markRowDeleting("Trial Users", rowIndex);
     
     try {
       const response = await fetch("/api/admin/delete-user", {
@@ -824,13 +859,15 @@ export default function AdminPage() {
         return;
       }
       if (result?.ok) {
-        setTrialUsers(trialUsers.filter((u) => u.rowIndex !== rowIndex));
+        setTrialUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(rowIndex)));
         setStatusMessage("Trial user deleted.");
       } else {
         setStatusMessage(result?.message || "Failed to delete user.");
       }
     } catch (error) {
       setStatusMessage("Error deleting user.");
+    } finally {
+      clearRowDeleting("Trial Users", rowIndex);
     }
   };
 
@@ -897,6 +934,9 @@ export default function AdminPage() {
 
   const deletePtUser = async (rowIndex: number) => {
     if (!confirm("Are you sure you want to delete this PT lead?")) return;
+    if (isRowDeleting("Personal Training", rowIndex)) return;
+
+    markRowDeleting("Personal Training", rowIndex);
 
     try {
       const response = await fetch("/api/admin/delete-user", {
@@ -915,13 +955,15 @@ export default function AdminPage() {
         return;
       }
       if (result?.ok) {
-        setPtUsers(ptUsers.filter((u) => u.rowIndex !== rowIndex));
+        setPtUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(rowIndex)));
         setStatusMessage("PT lead deleted.");
       } else {
         setStatusMessage(result?.message || "Failed to delete PT lead.");
       }
     } catch {
       setStatusMessage("Error deleting PT lead.");
+    } finally {
+      clearRowDeleting("Personal Training", rowIndex);
     }
   };
 
@@ -1024,6 +1066,9 @@ export default function AdminPage() {
 
   const deletePaymentUser = async (rowIndex: number) => {
     if (!confirm("Are you sure you want to delete this payment user?")) return;
+    if (isRowDeleting("Submissions", rowIndex)) return;
+
+    markRowDeleting("Submissions", rowIndex);
     
     try {
       const response = await fetch("/api/admin/delete-user", {
@@ -1042,18 +1087,25 @@ export default function AdminPage() {
         return;
       }
       if (result?.ok) {
-        setPaymentUsers(paymentUsers.filter((u) => u.rowIndex !== rowIndex));
+        setPaymentUsers((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(rowIndex)));
+        setRegistrations((prev) => prev.filter((user) => Number(user?.rowIndex) !== Number(rowIndex)));
+        setExpandedLapRows((prev) => prev.filter((value) => value !== Number(rowIndex)));
         setStatusMessage("Payment user deleted.");
       } else {
         setStatusMessage(result?.message || "Failed to delete user.");
       }
     } catch (error) {
       setStatusMessage("Error deleting user.");
+    } finally {
+      clearRowDeleting("Submissions", rowIndex);
     }
   };
 
   const deleteLapRegistration = async (rowIndex: number) => {
     if (!confirm("Are you sure you want to delete this LAP registration record?")) return;
+    if (isRowDeleting("Submissions", rowIndex)) return;
+
+    markRowDeleting("Submissions", rowIndex);
 
     try {
       const response = await fetch("/api/admin/delete-user", {
@@ -1082,6 +1134,8 @@ export default function AdminPage() {
       }
     } catch {
       setStatusMessage("Error deleting LAP registration.");
+    } finally {
+      clearRowDeleting("Submissions", rowIndex);
     }
   };
 
@@ -1263,7 +1317,8 @@ export default function AdminPage() {
               disabled={isLoading}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-800 px-4 py-2.5 text-sm font-semibold transition hover:bg-zinc-700 disabled:opacity-70"
             >
-              <RefreshCw size={16} /> {isLoading ? "Loading..." : "Reload"}
+              {isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              {isLoading ? "Loading..." : "Reload"}
             </button>
 
             <button
@@ -1272,7 +1327,8 @@ export default function AdminPage() {
               disabled={isSaving}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-70"
             >
-              <Save size={16} /> {isSaving ? "Saving..." : cmsUsingDefaults ? "Seed CMS Sheet" : "Save Changes"}
+              {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {isSaving ? "Saving..." : cmsUsingDefaults ? "Seed CMS Sheet" : "Save Changes"}
             </button>
 
             <button
@@ -1281,6 +1337,7 @@ export default function AdminPage() {
               disabled={isInitializingLapTabs}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-orange/70 bg-transparent px-4 py-2.5 text-sm font-semibold text-brand-orange transition hover:bg-brand-orange/10 disabled:opacity-70"
             >
+              {isInitializingLapTabs ? <Loader2 size={16} className="animate-spin" /> : null}
               {isInitializingLapTabs ? "Initializing..." : "Initialize LAP Tabs"}
             </button>
           </div>
@@ -1345,9 +1402,16 @@ export default function AdminPage() {
               disabled={isSavingCredentials}
               className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-100 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-white disabled:opacity-70"
             >
-              <Save size={16} /> {isSavingCredentials ? "Saving credentials..." : "Save Admin Credentials"}
+              {isSavingCredentials ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {isSavingCredentials ? "Saving credentials..." : "Save Admin Credentials"}
             </button>
           </div>
+
+          {activeAsyncLabel ? (
+            <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange animate-pulse">
+              <Loader2 size={16} className="animate-spin" /> {activeAsyncLabel}
+            </div>
+          ) : null}
 
           {statusMessage ? <p className="mt-3 text-sm text-zinc-300">{statusMessage}</p> : null}
         </header>
@@ -1453,7 +1517,7 @@ export default function AdminPage() {
               disabled={isSaving || !hasUnsavedSection("batchTimings")}
               className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
             >
-              <Save size={14} /> {isSaving ? "Saving..." : "Save Timings"}
+              {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? "Saving..." : "Save Timings"}
             </button>
           </div>
           {hasUnsavedSection("batchTimings") ? <p className="mt-2 text-xs text-amber-300">Unsaved changes in Batch Timings.</p> : null}
@@ -1569,7 +1633,7 @@ export default function AdminPage() {
                 disabled={isSaving || !hasUnsavedSection("pricingPlans")}
                 className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
               >
-                <Save size={14} /> {isSaving ? "Saving..." : "Save Plans"}
+                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? "Saving..." : "Save Plans"}
               </button>
               <button
                 type="button"
@@ -1677,7 +1741,7 @@ export default function AdminPage() {
                 disabled={isSaving || !hasUnsavedSection("lapPlans")}
                 className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
               >
-                <Save size={14} /> {isSaving ? "Saving..." : "Save LAP"}
+                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? "Saving..." : "Save LAP"}
               </button>
               <button
                 type="button"
@@ -1849,7 +1913,7 @@ export default function AdminPage() {
               disabled={isSaving || !hasUnsavedSection("personalTraining")}
               className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
             >
-              <Save size={14} /> {isSaving ? "Saving..." : "Save PT"}
+              {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? "Saving..." : "Save PT"}
             </button>
           </div>
           {hasUnsavedSection("personalTraining") ? <p className="mt-2 text-xs text-amber-300">Unsaved changes in Personal Training.</p> : null}
@@ -1978,7 +2042,7 @@ export default function AdminPage() {
               disabled={isSaving || !hasUnsavedSection("featuredEvent")}
               className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-50"
             >
-              <Save size={14} /> {isSaving ? "Saving..." : "Save Event"}
+              {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? "Saving..." : "Save Event"}
             </button>
           </div>
           {hasUnsavedSection("featuredEvent") ? <p className="mt-2 text-xs text-amber-300">Unsaved changes in Featured Event.</p> : null}
@@ -2159,7 +2223,7 @@ export default function AdminPage() {
                     {trialLoading ? (
                       <tr>
                         <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">
-                          Loading...
+                          <span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading...</span>
                         </td>
                       </tr>
                     ) : filterTrialUsers().length === 0 ? (
@@ -2169,8 +2233,15 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ) : (
-                      filterTrialUsers().map((user, idx) => (
-                        <tr key={idx} className="hover:bg-black/30 transition">
+                      filterTrialUsers().map((user, idx) => {
+                        const trialRowIndex = Number(user?.rowIndex ?? -1);
+                        const isDeleting = isRowDeleting("Trial Users", trialRowIndex);
+
+                        return (
+                        <tr
+                          key={`trial-${String(user?.rowIndex ?? idx)}`}
+                          className={`transition ${isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
+                        >
                           <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt).toLocaleDateString()}</td>
                           <td className="px-4 py-3 text-zinc-300">{user.name}</td>
                           <td className="px-4 py-3 text-zinc-300">{user.email}</td>
@@ -2180,13 +2251,16 @@ export default function AdminPage() {
                           <td className="px-4 py-3">
                             <button
                               onClick={() => deleteTrialUser(user.rowIndex)}
-                              className="text-red-400 hover:text-red-300 transition text-sm font-semibold"
+                              disabled={isDeleting}
+                              className="inline-flex items-center gap-2 text-red-400 hover:text-red-300 transition text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                              Delete
+                              {isDeleting ? <Loader2 size={14} className="animate-spin" /> : null}
+                              {isDeleting ? "Deleting..." : "Delete"}
                             </button>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -2269,7 +2343,7 @@ export default function AdminPage() {
                     {paymentLoading ? (
                       <tr>
                         <td colSpan={8} className="px-4 py-4 text-center text-zinc-400">
-                          Loading...
+                          <span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading...</span>
                         </td>
                       </tr>
                     ) : filterPaymentUsers().length === 0 ? (
@@ -2279,8 +2353,15 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ) : (
-                      filterPaymentUsers().map((user, idx) => (
-                        <tr key={idx} className="hover:bg-black/30 transition">
+                      filterPaymentUsers().map((user, idx) => {
+                        const paymentRowIndex = Number(user?.rowIndex ?? -1);
+                        const isDeleting = isRowDeleting("Submissions", paymentRowIndex);
+
+                        return (
+                        <tr
+                          key={`payment-${String(user?.rowIndex ?? idx)}`}
+                          className={`transition ${isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
+                        >
                           <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt).toLocaleDateString()}</td>
                           <td className="px-4 py-3 text-zinc-300">{user.name}</td>
                           <td className="px-4 py-3 text-zinc-300">{user.email}</td>
@@ -2301,7 +2382,7 @@ export default function AdminPage() {
                               {String(user.paidStatus || "UNPAID") === "PAID" ? (
                                 <button
                                   type="button"
-                                  disabled={statusUpdatingRow === Number(user.rowIndex)}
+                                  disabled={statusUpdatingRow === Number(user.rowIndex) || isDeleting}
                                   onClick={() => updateRegistrationPaidStatus(Number(user.rowIndex), "UNPAID")}
                                   className="text-[11px] text-amber-300 hover:text-amber-200 disabled:opacity-70"
                                 >
@@ -2310,7 +2391,7 @@ export default function AdminPage() {
                               ) : (
                                 <button
                                   type="button"
-                                  disabled={statusUpdatingRow === Number(user.rowIndex)}
+                                  disabled={statusUpdatingRow === Number(user.rowIndex) || isDeleting}
                                   onClick={() => updateRegistrationPaidStatus(Number(user.rowIndex), "PAID")}
                                   className="text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-70"
                                 >
@@ -2322,13 +2403,16 @@ export default function AdminPage() {
                           <td className="px-4 py-3">
                             <button
                               onClick={() => deletePaymentUser(user.rowIndex)}
-                              className="text-red-400 hover:text-red-300 transition text-sm font-semibold"
+                              disabled={isDeleting}
+                              className="inline-flex items-center gap-2 text-red-400 hover:text-red-300 transition text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                              Delete
+                              {isDeleting ? <Loader2 size={14} className="animate-spin" /> : null}
+                              {isDeleting ? "Deleting..." : "Delete"}
                             </button>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -2350,7 +2434,7 @@ export default function AdminPage() {
                     disabled={ptLoading}
                     className="inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700 disabled:opacity-70"
                   >
-                    <RefreshCw size={14} /> {ptLoading ? "Loading..." : "Reload"}
+                    {ptLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} {ptLoading ? "Loading..." : "Reload"}
                   </button>
                   <button
                     type="button"
@@ -2378,15 +2462,22 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-zinc-700">
                     {ptLoading ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">Loading PT leads...</td>
+                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading PT leads...</span></td>
                       </tr>
                     ) : ptUsers.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">No PT leads yet. Click reload to fetch data.</td>
                       </tr>
                     ) : (
-                      ptUsers.map((user, idx) => (
-                        <tr key={idx} className="hover:bg-black/30 transition">
+                      ptUsers.map((user, idx) => {
+                        const ptRowIndex = Number(user?.rowIndex ?? -1);
+                        const isDeleting = isRowDeleting("Personal Training", ptRowIndex);
+
+                        return (
+                        <tr
+                          key={`pt-${String(user?.rowIndex ?? idx)}`}
+                          className={`transition ${isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}
+                        >
                           <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt || user.timestamp).toLocaleDateString()}</td>
                           <td className="px-4 py-3 text-zinc-300">{user.name}</td>
                           <td className="px-4 py-3 text-zinc-300 break-words max-w-xs">{user.email}</td>
@@ -2396,13 +2487,16 @@ export default function AdminPage() {
                           <td className="px-4 py-3">
                             <button
                               onClick={() => deletePtUser(user.rowIndex)}
-                              className="text-red-400 hover:text-red-300 transition text-sm font-semibold"
+                              disabled={isDeleting}
+                              className="inline-flex items-center gap-2 text-red-400 hover:text-red-300 transition text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                              Delete
+                              {isDeleting ? <Loader2 size={14} className="animate-spin" /> : null}
+                              {isDeleting ? "Deleting..." : "Delete"}
                             </button>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -2494,7 +2588,7 @@ export default function AdminPage() {
                     {registrationsLoading ? (
                       <tr>
                         <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">
-                          Loading registrations...
+                          <span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading registrations...</span>
                         </td>
                       </tr>
                     ) : filteredRegistrations.length === 0 ? (
@@ -2536,7 +2630,7 @@ export default function AdminPage() {
                     disabled={isSendingUnpaidReminders}
                     className="inline-flex items-center gap-2 rounded-lg border border-amber-400/60 bg-amber-400/10 px-4 py-2 text-sm font-semibold text-amber-300 transition hover:bg-amber-400/20 disabled:opacity-70"
                   >
-                    <Mail size={14} /> {isSendingUnpaidReminders ? "Sending..." : "Send Unpaid Reminders"}
+                    {isSendingUnpaidReminders ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} {isSendingUnpaidReminders ? "Sending..." : "Send Unpaid Reminders"}
                   </button>
                   <button
                     type="button"
@@ -2544,7 +2638,7 @@ export default function AdminPage() {
                     disabled={registrationsLoading}
                     className="inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700 disabled:opacity-70"
                   >
-                    <RefreshCw size={14} /> {registrationsLoading ? "Loading..." : "Reload"}
+                    {registrationsLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} {registrationsLoading ? "Loading..." : "Reload"}
                   </button>
                   <button
                     type="button"
@@ -2624,7 +2718,7 @@ export default function AdminPage() {
               </div>
 
               {registrationsLoading ? (
-                <div className="rounded-lg border border-zinc-700 bg-black/40 p-6 text-center text-zinc-400">Loading LAP registrations...</div>
+                <div className="rounded-lg border border-zinc-700 bg-black/40 p-6 text-center text-zinc-400"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Loading LAP registrations...</span></div>
               ) : getVisibleLapRegistrations().length === 0 ? (
                 <div className="rounded-lg border border-zinc-700 bg-black/40 p-6 text-center text-zinc-400">
                   {registrations.length === 0 ? "No registrations loaded. Click reload to fetch data." : "No LAP registrations found for selected filters."}
@@ -2661,10 +2755,11 @@ export default function AdminPage() {
                               const rowIndex = Number(user?.rowIndex ?? -1);
                               const canDelete = Number.isFinite(rowIndex) && rowIndex >= 0;
                               const isExpanded = canDelete && expandedLapRows.includes(rowIndex);
+                              const isDeleting = canDelete && isRowDeleting("Submissions", rowIndex);
 
                               return (
                                 <Fragment key={`${eventName}-${rowIndex}-${idx}`}>
-                                  <tr className="hover:bg-black/30 transition">
+                                  <tr className={`transition ${isDeleting ? "animate-pulse bg-red-500/5 opacity-60" : "hover:bg-black/30"}`}>
                                     <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt || user.timestamp).toLocaleDateString()}</td>
                                     <td className="px-4 py-3 text-zinc-300">{user.name || "-"}</td>
                                     <td className="px-4 py-3 text-zinc-300 break-words max-w-xs">{user.email || "-"}</td>
@@ -2690,7 +2785,7 @@ export default function AdminPage() {
                                         {String(user.paidStatus || "UNPAID") === "PAID" ? (
                                           <button
                                             type="button"
-                                            disabled={statusUpdatingRow === rowIndex}
+                                            disabled={statusUpdatingRow === rowIndex || isDeleting}
                                             onClick={() => updateRegistrationPaidStatus(rowIndex, "UNPAID")}
                                             className="text-[11px] text-amber-300 hover:text-amber-200 disabled:opacity-70"
                                           >
@@ -2699,7 +2794,7 @@ export default function AdminPage() {
                                         ) : (
                                           <button
                                             type="button"
-                                            disabled={statusUpdatingRow === rowIndex}
+                                            disabled={statusUpdatingRow === rowIndex || isDeleting}
                                             onClick={() => updateRegistrationPaidStatus(rowIndex, "PAID")}
                                             className="text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-70"
                                           >
@@ -2712,8 +2807,9 @@ export default function AdminPage() {
                                       {canDelete ? (
                                         <button
                                           type="button"
+                                          disabled={isDeleting}
                                           onClick={() => toggleLapDetails(rowIndex)}
-                                          className="text-brand-orange hover:text-orange-300 transition text-sm font-semibold"
+                                          className="text-brand-orange hover:text-orange-300 transition text-sm font-semibold disabled:opacity-50"
                                         >
                                           {isExpanded ? "Hide" : "Expand"}
                                         </button>
@@ -2726,9 +2822,11 @@ export default function AdminPage() {
                                         <button
                                           type="button"
                                           onClick={() => deleteLapRegistration(rowIndex)}
-                                          className="text-red-400 hover:text-red-300 transition text-sm font-semibold"
+                                          disabled={isDeleting}
+                                          className="inline-flex items-center gap-2 text-red-400 hover:text-red-300 transition text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-70"
                                         >
-                                          Delete
+                                          {isDeleting ? <Loader2 size={14} className="animate-spin" /> : null}
+                                          {isDeleting ? "Deleting..." : "Delete"}
                                         </button>
                                       ) : (
                                         <span className="text-xs text-zinc-500">No rowIndex</span>
@@ -2813,7 +2911,7 @@ export default function AdminPage() {
                     disabled={isSaving || !hasUnsavedSection("emailSettings")}
                     className="inline-flex items-center gap-2 rounded-lg bg-brand-orange px-3 py-2 text-xs font-bold text-black transition hover:brightness-110 disabled:opacity-50"
                   >
-                    <Save size={12} /> {isSaving ? "Saving..." : "Save SMTP"}
+                    {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {isSaving ? "Saving..." : "Save SMTP"}
                   </button>
                 </div>
                 {hasUnsavedSection("emailSettings") ? <p className="mb-3 text-xs text-amber-300">Unsaved changes in SMTP settings.</p> : null}
@@ -3008,6 +3106,7 @@ export default function AdminPage() {
                       disabled={smtpTestLoading}
                       className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-70"
                     >
+                      {smtpTestLoading ? <Loader2 size={14} className="animate-spin" /> : null}
                       {smtpTestLoading ? "Sending..." : "Send Test Email"}
                     </button>
                   </div>
@@ -3053,7 +3152,7 @@ export default function AdminPage() {
                     disabled={isSaving || !hasUnsavedSection("emailTemplates")}
                     className="inline-flex items-center gap-2 rounded-lg bg-brand-orange px-3 py-2 text-xs font-bold text-black transition hover:brightness-110 disabled:opacity-50"
                   >
-                    <Save size={12} /> {isSaving ? "Saving..." : "Save Templates"}
+                    {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {isSaving ? "Saving..." : "Save Templates"}
                   </button>
                 </div>
                 {hasUnsavedSection("emailTemplates") ? <p className="mb-3 text-xs text-amber-300">Unsaved changes in Email templates.</p> : null}
@@ -3238,7 +3337,7 @@ export default function AdminPage() {
                     disabled={trialLoading || paymentLoading}
                     className="inline-flex h-fit items-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700 disabled:opacity-70"
                   >
-                    <RefreshCw size={14} /> {trialLoading || paymentLoading ? "Loading..." : "Load Audience"}
+                    {trialLoading || paymentLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} {trialLoading || paymentLoading ? "Loading..." : "Load Audience"}
                   </button>
                 </div>
 
@@ -3293,7 +3392,7 @@ export default function AdminPage() {
                   disabled={emailSending || emailRecipients.length === 0 || !emailSubject.trim() || (!emailBody.trim() && !emailHtmlBody.trim())}
                   className="inline-flex items-center gap-2 rounded-lg bg-brand-orange px-6 py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-50"
                 >
-                  <Mail size={16} /> {emailSending ? "Sending..." : "Send Email"}
+                  {emailSending ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />} {emailSending ? "Sending..." : "Send Email"}
                 </button>
               </div>
             </section>

@@ -36,6 +36,7 @@ import {
   X,
   UserCheck,
   Zap,
+  Loader2,
 } from "lucide-react";
 
 const pillars = [
@@ -1134,7 +1135,7 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
         initial={{ opacity: 0, y: 22, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: "easeOut" }}
-        className="w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)]"
+        className={`w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)] ${isSubmitting ? "animate-pulse ring-2 ring-brand-orange/30" : ""}`}
       >
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
@@ -1145,11 +1146,18 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
           <button
             type="button"
             onClick={onClose}
+            disabled={isSubmitting}
             className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
           >
             Close
           </button>
         </div>
+
+        {isSubmitting ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
+            <Loader2 size={16} className="animate-spin" /> Sending your program request...
+          </div>
+        ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
@@ -1158,6 +1166,7 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
             placeholder="Full Name"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           />
 
@@ -1167,6 +1176,7 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
             placeholder="Email Address"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           />
 
@@ -1177,12 +1187,14 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
             placeholder="Phone Number"
             value={formData.phone}
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           />
 
           <select
             value={formData.program}
             onChange={(e) => setFormData({ ...formData, program: e.target.value as "7 Days" | "10 Days" })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           >
             <option>7 Days</option>
@@ -1194,14 +1206,16 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
             placeholder="Your goal (fat loss, inch loss, event prep, etc.)"
             value={formData.goal}
             onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           />
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
           >
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : null}
             {isSubmitting ? "Submitting..." : "Register & Get Full Program Info"}
           </button>
         </form>
@@ -1304,7 +1318,7 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
         initial={{ opacity: 0, y: 22, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: "easeOut" }}
-        className="w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)]"
+        className={`w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)] ${isSubmitting ? "animate-pulse ring-2 ring-brand-orange/30" : ""}`}
       >
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
@@ -1323,11 +1337,18 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
           <button
             type="button"
             onClick={onClose}
+            disabled={isSubmitting}
             className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
           >
             Close
           </button>
         </div>
+
+        {isSubmitting ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
+            <Loader2 size={16} className="animate-spin" /> Registering you for this LAP session...
+          </div>
+        ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1337,6 +1358,7 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
               placeholder="Full Name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
             <input
@@ -1345,6 +1367,7 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
               placeholder="Email Address"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
           </div>
@@ -1357,6 +1380,7 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
               placeholder="Phone Number"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
             <input
@@ -1365,6 +1389,7 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
               placeholder="Age"
               value={formData.age}
               onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
           </div>
@@ -1377,6 +1402,7 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
               step="0.1"
               value={formData.currentWeight}
               onChange={(e) => setFormData({ ...formData, currentWeight: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
             <input
@@ -1386,6 +1412,7 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
               step="0.1"
               value={formData.targetWeight}
               onChange={(e) => setFormData({ ...formData, targetWeight: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
           </div>
@@ -1395,14 +1422,16 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
             placeholder="Your health goal (weight loss timeline, dietary restrictions, medical conditions, etc.)"
             value={formData.goal}
             onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           />
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
           >
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : null}
             {isSubmitting ? "Submitting..." : "Register for LAP Program"}
           </button>
         </form>
@@ -1489,7 +1518,7 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
         initial={{ opacity: 0, y: 24, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: "easeOut" }}
-        className="w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)]"
+        className={`w-full max-w-lg rounded-3xl border border-brand-orange/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)] ${isSubmitting ? "animate-pulse ring-2 ring-brand-orange/30" : ""}`}
       >
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
@@ -1503,11 +1532,18 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
           <button
             type="button"
             onClick={onClose}
+            disabled={isSubmitting}
             className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
           >
             Close
           </button>
         </div>
+
+        {isSubmitting ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
+            <Loader2 size={16} className="animate-spin" /> Saving your PT enquiry...
+          </div>
+        ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1517,6 +1553,7 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
               placeholder="Full Name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
             <input
@@ -1525,6 +1562,7 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
               placeholder="Email Address"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
           </div>
@@ -1537,11 +1575,13 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
               placeholder="Phone Number"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             />
             <select
               value={formData.preferredSlot}
               onChange={(e) => setFormData({ ...formData, preferredSlot: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
             >
               <option>Morning</option>
@@ -1555,6 +1595,7 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
             placeholder="Your primary fitness goal"
             value={formData.goal}
             onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           />
 
@@ -1563,14 +1604,16 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
             placeholder="Additional notes (optional)"
             value={formData.notes}
             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
           />
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-orange py-3 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
           >
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : null}
             {isSubmitting ? "Submitting..." : personalTraining.ctaText || "Book Personal Training"}
           </button>
         </form>
@@ -1658,7 +1701,7 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
         initial={{ opacity: 0, y: 24, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.25, ease: "easeOut" }}
-        className="w-full max-w-xl rounded-3xl border border-[#ff7d00]/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)] sm:p-7"
+        className={`w-full max-w-xl rounded-3xl border border-[#ff7d00]/30 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)] sm:p-7 ${isSubmitting ? "animate-pulse ring-2 ring-brand-orange/30" : ""}`}
       >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
@@ -1674,11 +1717,18 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
             type="button"
             aria-label="Close"
             onClick={onClose}
+            disabled={isSubmitting}
             className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
           >
             Close
           </button>
         </div>
+
+        {isSubmitting ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
+            <Loader2 size={16} className="animate-spin" /> Creating your plan enquiry...
+          </div>
+        ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1688,6 +1738,7 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
               placeholder="Full Name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
             />
             <input
@@ -1696,6 +1747,7 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
               placeholder="Email Address"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
             />
           </div>
@@ -1708,6 +1760,7 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
               placeholder="Phone Number"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
             />
             <input
@@ -1718,12 +1771,14 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
               placeholder="Age"
               value={formData.age}
               onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
             />
             <select
               required
               value={formData.gender}
               onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+              disabled={isSubmitting}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
             >
               <option value="">Gender</option>
@@ -1738,6 +1793,7 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
             required
             value={formData.strengthLevel}
             onChange={(e) => setFormData({ ...formData, strengthLevel: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
           >
             <option>Beginner</option>
@@ -1750,14 +1806,16 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
             placeholder="Anything important we should know? (injury, medical condition, goals, etc.)"
             value={formData.notes}
             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            disabled={isSubmitting}
             className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff7d00]"
           />
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="mt-1 w-full rounded-xl bg-brand-orange py-3.5 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
+            className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-orange py-3.5 font-bold text-black transition hover:brightness-110 disabled:opacity-70"
           >
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : null}
             {isSubmitting ? "Opening WhatsApp..." : "Submit & Request Payment Link"}
           </button>
         </form>
@@ -1780,6 +1838,7 @@ function TrialForm({ batchOptions }: TrialFormProps) {
     batch: batchOptions[0] || "6:00 AM – 7:00 AM",
   });
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (batchOptions.length === 0) return;
@@ -1792,7 +1851,9 @@ function TrialForm({ batchOptions }: TrialFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    await submitToGoogleSheets({
+    setIsSubmitting(true);
+
+    const submitResult = await submitToGoogleSheets({
       formType: "trial",
       data: {
         name: formData.name,
@@ -1803,11 +1864,18 @@ function TrialForm({ batchOptions }: TrialFormProps) {
       },
     });
 
+    if (!submitResult.ok) {
+      alert(submitResult.message || "Trial registration is currently unavailable.");
+      setIsSubmitting(false);
+      return;
+    }
+
     const phone = "919158243377";
     const msg = encodeURIComponent(
       `Hi Coach Sayali! 🔥\n\nI want to claim my *FREE 2-DAY TRIAL* at Wani's Club Level Up.\n\n*Name:* ${formData.name}\n*Mobile:* ${formData.phone}\n*Email:* ${formData.email}\n*Fitness Goal:* ${formData.goal || "Not specified"}\n*Preferred Batch:* ${formData.batch}\n\nSee you at the gym!`
     );
     window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+    setIsSubmitting(false);
     setSubmitted(true);
   };
 
@@ -1818,7 +1886,7 @@ function TrialForm({ batchOptions }: TrialFormProps) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="mx-auto my-10 max-w-md rounded-3xl border border-[#ff7d00]/30 bg-zinc-900 p-8"
+      className={`mx-auto my-10 max-w-md rounded-3xl border border-[#ff7d00]/30 bg-zinc-900 p-8 ${isSubmitting ? "animate-pulse ring-2 ring-brand-orange/30" : ""}`}
     >
       <h3 className="mb-6 text-center text-2xl font-bold text-white">
         Claim Your <span className="text-brand-orange">Free 2-Day Pass</span>
@@ -1839,6 +1907,11 @@ function TrialForm({ batchOptions }: TrialFormProps) {
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isSubmitting ? (
+            <div className="flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
+              <Loader2 size={16} className="animate-spin" /> Sending your free trial request...
+            </div>
+          ) : null}
           <div>
             <label className="mb-1 block text-sm text-zinc-400">Your Name</label>
             <input
@@ -1847,6 +1920,7 @@ function TrialForm({ batchOptions }: TrialFormProps) {
               value={formData.name}
               placeholder="Enter your name"
               className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+              disabled={isSubmitting}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             />
           </div>
@@ -1860,6 +1934,7 @@ function TrialForm({ batchOptions }: TrialFormProps) {
                 value={formData.phone}
                 placeholder="Enter mobile number"
                 className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                disabled={isSubmitting}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               />
             </div>
@@ -1871,6 +1946,7 @@ function TrialForm({ batchOptions }: TrialFormProps) {
                 value={formData.email}
                 placeholder="Enter your email"
                 className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                disabled={isSubmitting}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               />
             </div>
@@ -1881,6 +1957,7 @@ function TrialForm({ batchOptions }: TrialFormProps) {
               required
               value={formData.goal}
               className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+              disabled={isSubmitting}
               onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
             >
               <option>Weight Loss</option>
@@ -1896,6 +1973,7 @@ function TrialForm({ batchOptions }: TrialFormProps) {
             <select
               value={formData.batch}
               className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+              disabled={isSubmitting}
               onChange={(e) => setFormData({ ...formData, batch: e.target.value })}
             >
               {(batchOptions.length > 0 ? batchOptions : ["6:00 AM – 7:00 AM", "7:00 AM – 8:00 AM", "8:00 AM – 9:00 AM", "5:00 PM – 6:00 PM", "7:00 PM – 8:00 PM"]).map((batch) => (
@@ -1911,9 +1989,11 @@ function TrialForm({ batchOptions }: TrialFormProps) {
           </div>
           <button
             type="submit"
-            className="mt-2 w-full rounded-xl bg-brand-orange py-4 font-bold uppercase tracking-wide text-black shadow-[0_0_18px_rgba(255,125,0,0.4)] transition hover:brightness-110"
+            disabled={isSubmitting}
+            className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-orange py-4 font-bold uppercase tracking-wide text-black shadow-[0_0_18px_rgba(255,125,0,0.4)] transition hover:brightness-110 disabled:opacity-70"
           >
-            Get My Pass via WhatsApp 🚀
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : null}
+            {isSubmitting ? "Submitting..." : "Get My Pass via WhatsApp 🚀"}
           </button>
         </form>
       )}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -65,7 +66,7 @@ export default function AdminLoginPage() {
         </div>
 
         {/* Login Form */}
-        <form onSubmit={handleLogin} className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
+        <form onSubmit={handleLogin} className={`rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4 ${isLoading ? "animate-pulse ring-2 ring-brand-orange/20" : ""}`}>
           <div>
             <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">Username</label>
             <input
@@ -95,8 +96,9 @@ export default function AdminLoginPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full rounded-lg bg-brand-orange px-4 py-2.5 font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-orange px-4 py-2.5 font-bold text-black transition hover:brightness-110 disabled:opacity-50"
           >
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : null}
             {isLoading ? "Logging in..." : "Login"}
           </button>
         </form>

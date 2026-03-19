@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 
 interface TrialFormProps {
   isOpen: boolean;
@@ -77,7 +77,7 @@ export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 shadow-xl">
+      <div className={`w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 shadow-xl ${isSubmitting ? "animate-pulse ring-2 ring-brand-orange/30" : ""}`}>
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-700 p-6">
           <div>
@@ -88,12 +88,19 @@ export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps)
           </div>
           <button
             onClick={handleClose}
-            className="rounded-lg p-1 hover:bg-zinc-800 transition"
+            disabled={isSubmitting}
+            className="rounded-lg p-1 hover:bg-zinc-800 transition disabled:opacity-50"
             aria-label="Close"
           >
             <X size={20} />
           </button>
         </div>
+
+        {isSubmitting ? (
+          <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
+            <Loader2 size={16} className="animate-spin" /> Submitting your trial registration...
+          </div>
+        ) : null}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -184,8 +191,9 @@ export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps)
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-lg bg-brand-orange px-4 py-2.5 font-bold text-black uppercase tracking-wide transition hover:brightness-110 disabled:opacity-50"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-orange px-4 py-2.5 font-bold text-black uppercase tracking-wide transition hover:brightness-110 disabled:opacity-50"
           >
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : null}
             {isSubmitting ? "Submitting..." : "Start Free Trial"}
           </button>
 
