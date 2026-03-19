@@ -81,6 +81,11 @@ function doPost(e) {
       return jsonResponse_({ ok: true, message: "User deleted." });
     }
 
+    if (action === "updatePaymentStatus") {
+      updatePaymentStatus_(body.rowIndex || 0, body.paidStatus || "UNPAID");
+      return jsonResponse_({ ok: true, message: "Payment status updated." });
+    }
+
     if (action === "togglePlan") {
       togglePlanStatus_(body.planIndex || 0);
       return jsonResponse_({ ok: true, message: "Plan toggled." });
@@ -662,7 +667,10 @@ function saveSubmission_(payload) {
     "goal",
     "notes",
     "dataJson",
+    "paidStatus",
   ]);
+
+  ensureSubmissionsPaidStatusColumn_(sheet);
 
   const data = payload && payload.data && typeof payload.data === "object" ? payload.data : {};
 
@@ -681,6 +689,7 @@ function saveSubmission_(payload) {
     String(data.goal || ""),
     String(data.notes || ""),
     JSON.stringify(data),
+    "UNPAID",
   ];
 
   const formType = String(payload.formType || "").toLowerCase();
@@ -840,17 +849,28 @@ function getRegistrations_() {
     "goal",
     "notes",
     "dataJson",
+    "paidStatus",
   ]);
+
+  ensureSubmissionsPaidStatusColumn_(sheet);
 
   if (sheet.getLastRow() < 2) {
     return [];
   }
 
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 14).getValues();
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 15).getValues();
   const registrations = [];
 
-  data.forEach(function (row) {
+  data.forEach(function (row, index) {
+    var details = {};
+    try {
+      details = JSON.parse(String(row[13] || "{}"));
+    } catch (err) {
+      details = {};
+    }
+
     registrations.push({
+      rowIndex: index + 2,
       timestamp: new Date(row[0]).toISOString(),
       formType: String(row[1] || ""),
       source: String(row[2] || ""),
@@ -864,6 +884,19 @@ function getRegistrations_() {
       batch: String(row[10] || ""),
       goal: String(row[11] || ""),
       notes: String(row[12] || ""),
+      paidStatus: String(row[14] || "UNPAID"),
+      age: String(details.age || ""),
+      currentWeight: String(details.currentWeight || ""),
+      targetWeight: String(details.targetWeight || ""),
+      gender: String(details.gender || ""),
+      strengthLevel: String(details.strengthLevel || ""),
+      preferredSlot: String(details.preferredSlot || ""),
+      startDate: String(details.startDate || ""),
+      endDate: String(details.endDate || ""),
+      numberOfDays: String(details.numberOfDays || ""),
+      lapCharges: String(details.lapCharges || ""),
+      shakeCharges: String(details.shakeCharges || ""),
+      comboPrice: String(details.comboPrice || ""),
     });
   });
 
@@ -1118,13 +1151,16 @@ function getPaymentUsers_() {
     "goal",
     "notes",
     "dataJson",
+    "paidStatus",
   ]);
+
+  ensureSubmissionsPaidStatusColumn_(sheet);
 
   if (sheet.getLastRow() < 2) {
     return [];
   }
 
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 14).getValues();
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 15).getValues();
   const users = [];
 
   data.forEach(function (row, index) {
@@ -1142,7 +1178,8 @@ function getPaymentUsers_() {
       planPrice: String(row[9] || ""),
       batch: String(row[10] || ""),
       goal: String(row[11] || ""),
-      notes: String(row[12] || "")
+      notes: String(row[12] || ""),
+      paidStatus: String(row[14] || "UNPAID")
     });
   });
 
@@ -1203,6 +1240,59 @@ function deleteUser_(sheetName, rowIndex) {
   }
   
   sheet.deleteRow(rowIndex);
+}
+
+function updatePaymentStatus_(rowIndex, paidStatus) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SUBMISSIONS_SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error("Submissions sheet not found");
+  }
+
+  ensureSubmissionsPaidStatusColumn_(sheet);
+
+  if (rowIndex < 2 || rowIndex > sheet.getLastRow()) {
+    throw new Error("Invalid row index");
+  }
+
+  const normalized = String(paidStatus || "UNPAID").toUpperCase() === "PAID" ? "PAID" : "UNPAID";
+  const paidStatusCol = findHeaderColumn_(sheet, "paidStatus");
+  if (!paidStatusCol) {
+    throw new Error("paidStatus column missing");
+  }
+
+  sheet.getRange(rowIndex, paidStatusCol).setValue(normalized);
+}
+
+function ensureSubmissionsPaidStatusColumn_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1) return;
+
+  var paidStatusCol = findHeaderColumn_(sheet, "paidStatus");
+  if (paidStatusCol) return;
+
+  paidStatusCol = Math.max(1, sheet.getLastColumn()) + 1;
+  sheet.getRange(1, paidStatusCol).setValue("paidStatus");
+
+  if (sheet.getLastRow() > 1) {
+    var rows = sheet.getLastRow() - 1;
+    var values = [];
+    for (var i = 0; i < rows; i++) {
+      values.push(["UNPAID"]);
+    }
+    sheet.getRange(2, paidStatusCol, rows, 1).setValues(values);
+  }
+}
+
+function findHeaderColumn_(sheet, headerName) {
+  if (!sheet || sheet.getLastRow() < 1) return 0;
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i] || "").trim() === headerName) {
+      return i + 1;
+    }
+  }
+  return 0;
 }
 
 // ==================== TOGGLE SYSTEM ====================

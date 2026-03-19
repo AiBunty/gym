@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sendSubmissionEmails } from "@/lib/email";
 
 const getAppsScriptUrls = () => {
   const directUrls = [
@@ -91,6 +92,29 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           ok: true,
           message: "Trial registration submitted successfully",
+          email: await (async () => {
+            try {
+              return await sendSubmissionEmails({
+                formType: "trial",
+                submittedAt: new Date().toISOString(),
+                name: name.trim(),
+                email: email.trim(),
+                phone: phone.trim(),
+                program: "",
+                planName: "",
+                planPrice: "",
+                goal: "",
+                age: age?.trim() || "",
+                notes: interests?.trim() || "",
+              });
+            } catch (mailError) {
+              return {
+                ok: false,
+                skipped: false,
+                error: mailError instanceof Error ? mailError.message : "Email failed",
+              };
+            }
+          })(),
         });
       } catch (innerError) {
         lastError = innerError instanceof Error ? innerError.message : "Failed to submit trial form";

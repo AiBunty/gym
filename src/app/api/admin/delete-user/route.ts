@@ -1,13 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminToken } from "@/lib/adminAuth";
 
-const getAppsScriptUrl = () => {
-  const deploymentId = process.env.NEXT_PUBLIC_APPSCRIPT_DEPLOYMENT_ID;
-  if (!deploymentId) {
-    throw new Error("NEXT_PUBLIC_APPSCRIPT_DEPLOYMENT_ID not configured");
-  }
-  return `https://script.google.com/macros/d/${deploymentId}/usercopy/exec`;
+const getAppsScriptUrls = () => {
+  const directUrls = [
+    process.env.APPS_SCRIPT_CMS_WRITE_URL,
+    process.env.APPS_SCRIPT_CMS_URL,
+  ].filter(Boolean) as string[];
+
+  const deploymentInput = process.env.NEXT_PUBLIC_APPSCRIPT_DEPLOYMENT_ID?.trim();
+  const isFullUrl = !!deploymentInput && /^https?:\/\//i.test(deploymentInput);
+  const deploymentUrlS = deploymentInput
+    ? isFullUrl
+      ? deploymentInput
+      : `https://script.google.com/macros/s/${deploymentInput}/exec`
+    : null;
+  const deploymentUrlD = deploymentInput && !isFullUrl
+    ? `https://script.google.com/macros/d/${deploymentInput}/usercopy/exec`
+    : null;
+
+  return Array.from(
+    new Set([
+      ...directUrls,
+      ...(deploymentUrlS ? [deploymentUrlS] : []),
+      ...(deploymentUrlD ? [deploymentUrlD] : []),
+    ])
+  );
 };
+
+function looksLikeHtml(text: string): boolean {
+  const trimmed = text.trim().toLowerCase();
+  return trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html");
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,42 +44,80 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!sheetName || rowIndex === undefined) {
+    const normalizedSheetName = String(sheetName || "").trim();
+    const normalizedRowIndex = Number(rowIndex);
+
+    if (!normalizedSheetName || !Number.isFinite(normalizedRowIndex)) {
       return NextResponse.json(
         { ok: false, message: "Sheet name and row index required" },
         { status: 400 }
       );
     }
 
-    // Call Apps Script to delete user
-    const appsScriptUrl = getAppsScriptUrl();
-    const response = await fetch(appsScriptUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "deleteUser",
-        sheetName,
-        rowIndex,
-      }),
-    });
-
-    const result = await response.json();
-
-    if (!result?.ok) {
+    const appsScriptUrls = getAppsScriptUrls();
+    if (appsScriptUrls.length === 0) {
       return NextResponse.json(
-        { ok: false, message: result?.message || "Failed to delete user" },
+        { ok: false, message: "Apps Script URL is not configured" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      ok: true,
-      message: "User deleted successfully",
-    });
+    let lastError = "";
+
+    for (const appsScriptUrl of appsScriptUrls) {
+      try {
+        const response = await fetch(appsScriptUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "deleteUser",
+            sheetName: normalizedSheetName,
+            rowIndex: normalizedRowIndex,
+          }),
+          cache: "no-store",
+        });
+
+        const text = await response.text();
+        if (!response.ok) {
+          lastError = `Delete user failed with ${response.status}`;
+          continue;
+        }
+
+        if (looksLikeHtml(text)) {
+          lastError = "Apps Script returned HTML instead of JSON";
+          continue;
+        }
+
+        let result: unknown = null;
+        try {
+          result = JSON.parse(text);
+        } catch {
+          lastError = "Invalid JSON response from Apps Script";
+          continue;
+        }
+
+        if (!(result as { ok?: boolean }).ok) {
+          lastError = (result as { message?: string }).message || "Failed to delete user";
+          continue;
+        }
+
+        return NextResponse.json({
+          ok: true,
+          message: "User deleted successfully",
+        });
+      } catch (innerError) {
+        lastError = innerError instanceof Error ? innerError.message : "Failed to delete user";
+      }
+    }
+
+    return NextResponse.json(
+      { ok: false, message: lastError || "Failed to delete user" },
+      { status: 502 }
+    );
   } catch (error) {
     console.error("Delete user error:", error);
     return NextResponse.json(
-      { ok: false, message: "Server error" },
+      { ok: false, message: error instanceof Error ? error.message : "Server error" },
       { status: 500 }
     );
   }

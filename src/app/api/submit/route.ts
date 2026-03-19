@@ -126,6 +126,16 @@ export async function POST(request: Request) {
                   planName: String((data as Record<string, unknown>).planName || ""),
                   planPrice: String((data as Record<string, unknown>).planPrice || ""),
                   goal: String((data as Record<string, unknown>).goal || ""),
+                  batch: String((data as Record<string, unknown>).batch || ""),
+                  age: String((data as Record<string, unknown>).age || ""),
+                  gender: String((data as Record<string, unknown>).gender || ""),
+                  strengthLevel: String((data as Record<string, unknown>).strengthLevel || ""),
+                  preferredSlot: String((data as Record<string, unknown>).preferredSlot || ""),
+                  notes: String((data as Record<string, unknown>).notes || ""),
+                  currentWeight: String((data as Record<string, unknown>).currentWeight || ""),
+                  targetWeight: String((data as Record<string, unknown>).targetWeight || ""),
+                  startDate: String((data as Record<string, unknown>).startDate || ""),
+                  endDate: String((data as Record<string, unknown>).endDate || ""),
                 });
               } catch (mailError) {
                 return {

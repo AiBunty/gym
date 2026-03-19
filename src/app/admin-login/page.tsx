@@ -101,11 +101,7 @@ export default function AdminLoginPage() {
           </button>
         </form>
 
-        {/* Help Text */}
-        <div className="text-center text-xs text-zinc-500">
-          <p>Credentials stored in Google Sheets</p>
-          <p>Contact admin for access</p>
-        </div>
+
       </div>
     </main>
   );

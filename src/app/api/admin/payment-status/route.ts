@@ -5,6 +5,7 @@ const getAppsScriptUrls = () => {
   const directUrls = [
     process.env.APPS_SCRIPT_CMS_WRITE_URL,
     process.env.APPS_SCRIPT_CMS_URL,
+    process.env.APPS_SCRIPT_FORM_URL,
   ].filter(Boolean) as string[];
 
   const deploymentInput = process.env.NEXT_PUBLIC_APPSCRIPT_DEPLOYMENT_ID?.trim();
@@ -32,24 +33,31 @@ function looksLikeHtml(text: string): boolean {
   return trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html");
 }
 
+type PaymentStatusBody = {
+  token?: string;
+  rowIndex?: number;
+  paidStatus?: "PAID" | "UNPAID";
+};
+
 export async function POST(request: NextRequest) {
   try {
-    const { token } = await request.json();
+    const body = (await request.json()) as PaymentStatusBody;
 
-    const verification = verifyAdminToken(token);
+    const verification = verifyAdminToken(String(body.token || ""));
     if (!verification.ok) {
-      return NextResponse.json(
-        { ok: false, message: verification.message },
-        { status: 401 }
-      );
+      return NextResponse.json({ ok: false, message: verification.message }, { status: 401 });
+    }
+
+    const rowIndex = Number(body.rowIndex);
+    const paidStatus = String(body.paidStatus || "UNPAID").toUpperCase() === "PAID" ? "PAID" : "UNPAID";
+
+    if (!Number.isFinite(rowIndex) || rowIndex < 2) {
+      return NextResponse.json({ ok: false, message: "Valid row index is required." }, { status: 400 });
     }
 
     const appsScriptUrls = getAppsScriptUrls();
     if (appsScriptUrls.length === 0) {
-      return NextResponse.json(
-        { ok: false, message: "Apps Script URL is not configured" },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, message: "Apps Script URL is not configured." }, { status: 500 });
     }
 
     let lastError = "";
@@ -59,13 +67,17 @@ export async function POST(request: NextRequest) {
         const response = await fetch(appsScriptUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "getTrialUsers" }),
+          body: JSON.stringify({
+            action: "updatePaymentStatus",
+            rowIndex,
+            paidStatus,
+          }),
           cache: "no-store",
         });
 
         const text = await response.text();
         if (!response.ok) {
-          lastError = `Trial users fetch failed with ${response.status}`;
+          lastError = `Payment status update failed with ${response.status}`;
           continue;
         }
 
@@ -74,7 +86,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        let result: unknown = null;
+        let result: { ok?: boolean; message?: string } = {};
         try {
           result = JSON.parse(text);
         } catch {
@@ -82,28 +94,24 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        if (!(result as { ok?: boolean }).ok) {
-          lastError = (result as { message?: string }).message || "Failed to fetch trial users";
+        if (!result.ok) {
+          lastError = result.message || "Failed to update payment status";
           continue;
         }
 
         return NextResponse.json({
           ok: true,
-          data: (result as { data?: unknown }).data,
+          message: `Marked as ${paidStatus}.`,
         });
       } catch (innerError) {
-        lastError = innerError instanceof Error ? innerError.message : "Failed to fetch trial users";
+        lastError = innerError instanceof Error ? innerError.message : "Failed to update payment status";
       }
     }
 
-    return NextResponse.json(
-      { ok: false, message: lastError || "Failed to fetch trial users" },
-      { status: 502 }
-    );
+    return NextResponse.json({ ok: false, message: lastError || "Failed to update payment status" }, { status: 502 });
   } catch (error) {
-    console.error("Get trial users error:", error);
     return NextResponse.json(
-      { ok: false, message: "Server error" },
+      { ok: false, message: error instanceof Error ? error.message : "Server error" },
       { status: 500 }
     );
   }

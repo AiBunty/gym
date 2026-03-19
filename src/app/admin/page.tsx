@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { defaultBatchTimings, defaultEmailSettings, defaultEmailTemplates, defaultFeaturedEvent, defaultLapPlans, defaultPersonalTraining, defaultPlans, type CmsData, type LapPlan, type Plan } from "@/lib/cms";
-import { Plus, Trash2, Save, RefreshCw, Mail, BarChart3, Download, LogOut, ToggleLeft, ToggleRight } from "lucide-react";
+import { Plus, Trash2, Save, RefreshCw, Mail, BarChart3, Download, LogOut, ToggleLeft, ToggleRight, Eye, EyeOff } from "lucide-react";
 
 const defaultData: CmsData = {
   pricingPlans: defaultPlans,
@@ -51,6 +51,20 @@ export default function AdminPage() {
   const [newAdminUsername, setNewAdminUsername] = useState("admin");
   const [newAdminPassword, setNewAdminPassword] = useState("");
   const [confirmAdminPassword, setConfirmAdminPassword] = useState("");
+  const [showAdminKey, setShowAdminKey] = useState(false);
+  const [showAdminCredentialsPassword, setShowAdminCredentialsPassword] = useState(false);
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false);
+
+  const openDatePicker = (input: HTMLInputElement | null) => {
+    const pickerInput = input as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!pickerInput?.showPicker) return;
+
+    try {
+      pickerInput.showPicker();
+    } catch {
+      // Ignore browsers that reject programmatic picker opening.
+    }
+  };
 
   // Check authentication on mount
   useEffect(() => {
@@ -89,6 +103,13 @@ export default function AdminPage() {
 
   const handleLogout = () => {
     localStorage.removeItem("admin_token");
+    router.push("/admin-login");
+  };
+
+  const handleUnauthorizedResponse = () => {
+    localStorage.removeItem("admin_token");
+    setToken(null);
+    setStatusMessage("Session expired. Please login again.");
     router.push("/admin-login");
   };
 
@@ -383,12 +404,14 @@ export default function AdminPage() {
   };
 
   // Reports & Email State
-  const [activeTab, setActiveTab] = useState<"cms" | "reports" | "trial" | "payment" | "pt" | "email">("cms");
+  const [activeTab, setActiveTab] = useState<"cms" | "reports" | "lapReports" | "trial" | "payment" | "pt" | "email">("cms");
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
   const [dateRangeStart, setDateRangeStart] = useState("");
   const [dateRangeEnd, setDateRangeEnd] = useState("");
   const [programFilter, setProgramFilter] = useState<"All" | "LAP 7 Days" | "LAP 10 Days">("All");
+  const [lapPaymentFilter, setLapPaymentFilter] = useState<"ALL" | "PAID" | "UNPAID">("ALL");
+  const [expandedLapRows, setExpandedLapRows] = useState<number[]>([]);
   
   // Trial Users State
   const [trialUsers, setTrialUsers] = useState<any[]>([]);
@@ -416,8 +439,16 @@ export default function AdminPage() {
   const [emailAudienceSource, setEmailAudienceSource] = useState<"trial" | "payment" | "all">("all");
   const [smtpTestEmail, setSmtpTestEmail] = useState("");
   const [smtpTestLoading, setSmtpTestLoading] = useState(false);
-  const [smtpDiagnostics, setSmtpDiagnostics] = useState<string>("");
+  const [smtpTestResult, setSmtpTestResult] = useState<{
+    ok: boolean;
+    message: string;
+    suggestion?: string;
+    technical?: string;
+    details?: Record<string, unknown>;
+  } | null>(null);
   const [selectedManualTemplatePreset, setSelectedManualTemplatePreset] = useState<"trial" | "plan_enquiry" | "lap">("trial");
+  const [isSendingUnpaidReminders, setIsSendingUnpaidReminders] = useState(false);
+  const [statusUpdatingRow, setStatusUpdatingRow] = useState<number | null>(null);
 
   useEffect(() => {
     setEmailRecipients([]);
@@ -477,8 +508,8 @@ export default function AdminPage() {
   };
 
   const fetchRegistrations = async () => {
-    if (!adminKey.trim()) {
-      setStatusMessage("Enter admin key to fetch registrations.");
+    if (!token && !adminKey.trim()) {
+      setStatusMessage("Session expired. Please login again or enter admin key.");
       return;
     }
     
@@ -489,8 +520,13 @@ export default function AdminPage() {
       const response = await fetch("/api/admin/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminKey }),
+        body: JSON.stringify({ adminKey, token }),
       });
+
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
       
       const result = await response.json();
       if (result?.ok && result?.data?.registrations) {
@@ -532,6 +568,49 @@ export default function AdminPage() {
   };
 
   const filteredRegistrations = filterRegistrations();
+
+  const isLapRegistration = (registration: any) => {
+    const formType = String(registration?.formType || "").toLowerCase();
+    const planName = String(registration?.planName || "").toLowerCase();
+    const program = String(registration?.program || "").toLowerCase();
+    return formType === "weight_loss_program" || planName.includes("lap") || program.includes("lap");
+  };
+
+  const getLapEventName = (registration: any) => {
+    const plan = String(registration?.planName || "").trim();
+    if (plan) return plan;
+    const program = String(registration?.program || "").trim();
+    if (program) return program;
+    return "Unassigned LAP Session";
+  };
+
+  const getLapRegistrations = () => {
+    return filteredRegistrations.filter(isLapRegistration);
+  };
+
+  const getVisibleLapRegistrations = () => {
+    const lapRows = getLapRegistrations();
+    if (lapPaymentFilter === "ALL") return lapRows;
+    return lapRows.filter((row) => String(row?.paidStatus || "UNPAID") === lapPaymentFilter);
+  };
+
+  const groupLapRegistrations = () => {
+    const grouped: Record<string, any[]> = {};
+    for (const registration of getVisibleLapRegistrations()) {
+      const eventName = getLapEventName(registration);
+      if (!grouped[eventName]) grouped[eventName] = [];
+      grouped[eventName].push(registration);
+    }
+    return grouped;
+  };
+
+  const toggleLapDetails = (rowIndex: number) => {
+    setExpandedLapRows((prev) =>
+      prev.includes(rowIndex)
+        ? prev.filter((value) => value !== rowIndex)
+        : [...prev, rowIndex]
+    );
+  };
 
   const getEmailAudienceUsers = () => {
     const trial = filterTrialUsers().map((user) => ({
@@ -690,6 +769,11 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
+
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
       
       const result = await response.json();
       if (result?.ok && result?.data?.users) {
@@ -735,11 +819,15 @@ export default function AdminPage() {
       });
       
       const result = await response.json();
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
       if (result?.ok) {
         setTrialUsers(trialUsers.filter((u) => u.rowIndex !== rowIndex));
         setStatusMessage("Trial user deleted.");
       } else {
-        setStatusMessage("Failed to delete user.");
+        setStatusMessage(result?.message || "Failed to delete user.");
       }
     } catch (error) {
       setStatusMessage("Error deleting user.");
@@ -757,6 +845,11 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
+
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
       
       const result = await response.json();
       if (result?.ok && result?.data?.users) {
@@ -782,6 +875,11 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
+
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
 
       const result = await response.json();
       if (result?.ok && result?.data?.users) {
@@ -812,11 +910,15 @@ export default function AdminPage() {
       });
 
       const result = await response.json();
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
       if (result?.ok) {
         setPtUsers(ptUsers.filter((u) => u.rowIndex !== rowIndex));
         setStatusMessage("PT lead deleted.");
       } else {
-        setStatusMessage("Failed to delete PT lead.");
+        setStatusMessage(result?.message || "Failed to delete PT lead.");
       }
     } catch {
       setStatusMessage("Error deleting PT lead.");
@@ -849,6 +951,10 @@ export default function AdminPage() {
     setStatusMessage(`Applied ${selectedManualTemplatePreset.toUpperCase()} starter template.`);
   };
 
+  const TEST_EMAIL_SUBJECT = "\u2705 SMTP Test \u2014 Wani's Club Level Up";
+  const TEST_EMAIL_HTML = `<div style="font-family:Arial,sans-serif;background:#0a0a0a;padding:24px"><div style="max-width:560px;margin:0 auto;background:#111;border:1px solid #27272a;border-radius:14px;overflow:hidden"><div style="padding:16px;background:linear-gradient(90deg,#ff7d00,#ff9f43);color:#111;font-weight:700;font-size:15px">Wani's Club Level Up \u2014 SMTP Test</div><div style="padding:20px;color:#e4e4e7"><h2 style="margin:0 0 12px 0;color:#fff">\u2705 SMTP is working!</h2><p style="margin:0 0 10px 0">This is a test email sent from your gym admin panel.</p><p style="margin:0 0 10px 0">Your SMTP configuration is set up correctly. Automated emails will be delivered successfully.</p><p style="margin:0;color:#a1a1aa;font-size:12px">Sent from Wani's Club Level Up Admin Panel</p></div></div></div>`;
+  const TEST_EMAIL_TEXT = "This is a test email from your gym admin panel. If you received this, your SMTP configuration is working correctly.";
+
   const runSmtpTest = async () => {
     if (!smtpTestEmail.trim()) {
       setStatusMessage("Enter a recipient email for SMTP test.");
@@ -856,7 +962,7 @@ export default function AdminPage() {
     }
 
     setSmtpTestLoading(true);
-    setSmtpDiagnostics("");
+    setSmtpTestResult(null);
     setStatusMessage("");
 
     try {
@@ -867,23 +973,35 @@ export default function AdminPage() {
           token,
           toEmail: smtpTestEmail.trim(),
           smtp: cmsData.emailSettings,
-          subject: emailSubject || "SMTP Test - Wani's Club Level Up",
-          text: emailBody || "This is a test SMTP message from admin panel.",
-          html: emailHtmlBody || "",
+          subject: TEST_EMAIL_SUBJECT,
+          text: TEST_EMAIL_TEXT,
+          html: TEST_EMAIL_HTML,
         }),
       });
 
       const result = await response.json();
       if (!response.ok || !result?.ok) {
-        setStatusMessage(result?.message || "SMTP test failed.");
-        setSmtpDiagnostics(JSON.stringify(result?.diagnostics || {}, null, 2));
+        setSmtpTestResult({
+          ok: false,
+          message: result?.message || "SMTP test failed.",
+          suggestion: result?.suggestion,
+          technical: result?.technical,
+          details: result?.diagnostics,
+        });
         return;
       }
 
-      setStatusMessage("SMTP test sent successfully.");
-      setSmtpDiagnostics(JSON.stringify(result?.diagnostics || {}, null, 2));
+      setSmtpTestResult({
+        ok: true,
+        message: `Email delivered to ${smtpTestEmail.trim()}`,
+        details: result?.diagnostics,
+      });
     } catch {
-      setStatusMessage("SMTP test failed due to network error.");
+      setSmtpTestResult({
+        ok: false,
+        message: "SMTP test failed due to a network error.",
+        suggestion: "Check your internet connection and try again.",
+      });
     } finally {
       setSmtpTestLoading(false);
     }
@@ -919,14 +1037,146 @@ export default function AdminPage() {
       });
       
       const result = await response.json();
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
       if (result?.ok) {
         setPaymentUsers(paymentUsers.filter((u) => u.rowIndex !== rowIndex));
         setStatusMessage("Payment user deleted.");
       } else {
-        setStatusMessage("Failed to delete user.");
+        setStatusMessage(result?.message || "Failed to delete user.");
       }
     } catch (error) {
       setStatusMessage("Error deleting user.");
+    }
+  };
+
+  const deleteLapRegistration = async (rowIndex: number) => {
+    if (!confirm("Are you sure you want to delete this LAP registration record?")) return;
+
+    try {
+      const response = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          sheetName: "Submissions",
+          rowIndex,
+        }),
+      });
+
+      const result = await response.json();
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
+
+      if (result?.ok) {
+        setRegistrations((prev) => prev.filter((row) => Number(row?.rowIndex) !== Number(rowIndex)));
+        setPaymentUsers((prev) => prev.filter((row) => Number(row?.rowIndex) !== Number(rowIndex)));
+        setExpandedLapRows((prev) => prev.filter((value) => value !== Number(rowIndex)));
+        setStatusMessage("LAP registration deleted.");
+      } else {
+        setStatusMessage(result?.message || "Failed to delete LAP registration.");
+      }
+    } catch {
+      setStatusMessage("Error deleting LAP registration.");
+    }
+  };
+
+  const updateRegistrationPaidStatus = async (rowIndex: number, paidStatus: "PAID" | "UNPAID") => {
+    setStatusUpdatingRow(rowIndex);
+    try {
+      const response = await fetch("/api/admin/payment-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          rowIndex,
+          paidStatus,
+        }),
+      });
+
+      const result = await response.json();
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
+
+      if (!result?.ok) {
+        setStatusMessage(result?.message || "Failed to update payment status.");
+        return;
+      }
+
+      setRegistrations((prev) =>
+        prev.map((row) =>
+          Number(row?.rowIndex) === Number(rowIndex)
+            ? { ...row, paidStatus }
+            : row
+        )
+      );
+
+      setPaymentUsers((prev) =>
+        prev.map((row) =>
+          Number(row?.rowIndex) === Number(rowIndex)
+            ? { ...row, paidStatus }
+            : row
+        )
+      );
+
+      setStatusMessage(`Registration marked as ${paidStatus}.`);
+    } catch {
+      setStatusMessage("Failed to update payment status.");
+    } finally {
+      setStatusUpdatingRow(null);
+    }
+  };
+
+  const sendUnpaidLapReminders = async () => {
+    const unpaidUsers = getLapRegistrations().filter((row) => String(row?.paidStatus || "UNPAID") !== "PAID");
+    const recipientEmails = Array.from(new Set(unpaidUsers.map((row) => String(row?.email || "").trim()).filter(Boolean)));
+
+    if (recipientEmails.length === 0) {
+      setStatusMessage("No unpaid LAP users with valid email found.");
+      return;
+    }
+
+    setIsSendingUnpaidReminders(true);
+    setStatusMessage("");
+
+    try {
+      const response = await fetch("/api/admin/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          audienceSource: "payment",
+          recipientEmails,
+          subject: "Payment Reminder - Wani's Club Level Up",
+          message:
+            "This is a gentle reminder that your LAP payment is still pending. Please complete your fee payment to continue smoothly. If you already paid, please ignore this message.",
+          html:
+            "<div style=\"font-family:Arial,sans-serif;background:#0a0a0a;padding:24px\"><div style=\"max-width:640px;margin:0 auto;background:#111;border:1px solid #27272a;border-radius:14px;overflow:hidden\"><div style=\"padding:18px;background:linear-gradient(90deg,#ff7d00,#ff9f43);color:#111;font-weight:700\">Wani's Club Level Up</div><div style=\"padding:20px;color:#e4e4e7\"><h2 style=\"margin:0 0 10px 0;color:#fff\">Payment Reminder</h2><p style=\"margin:0 0 8px 0\">Your LAP fee is showing as pending in our records.</p><p style=\"margin:0 0 8px 0\">Please complete your payment at the earliest. If already paid, kindly ignore this reminder.</p><p style=\"margin:0;color:#a1a1aa\">Team Wani's Club Level Up</p></div></div></div>",
+        }),
+      });
+
+      const result = await response.json();
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+        return;
+      }
+
+      if (!result?.ok) {
+        setStatusMessage(result?.message || "Failed to send unpaid reminders.");
+        return;
+      }
+
+      setStatusMessage(`Reminder email sent to ${recipientEmails.length} unpaid users.`);
+    } catch {
+      setStatusMessage("Failed to send unpaid reminders.");
+    } finally {
+      setIsSendingUnpaidReminders(false);
     }
   };
 
@@ -989,13 +1239,23 @@ export default function AdminPage() {
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
-            <input
-              type="password"
-              placeholder="Enter admin key"
-              value={adminKey}
-              onChange={(e) => setAdminKey(e.target.value)}
-              className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
-            />
+            <div className="relative">
+              <input
+                type={showAdminKey ? "text" : "password"}
+                placeholder="Enter admin key"
+                value={adminKey}
+                onChange={(e) => setAdminKey(e.target.value)}
+                className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 pr-10 text-sm text-white outline-none focus:border-brand-orange"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAdminKey((prev) => !prev)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+                aria-label={showAdminKey ? "Hide admin key" : "Show admin key"}
+              >
+                {showAdminKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
 
             <button
               type="button"
@@ -1043,20 +1303,40 @@ export default function AdminPage() {
                 onChange={(e) => setNewAdminUsername(e.target.value)}
                 className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
               />
-              <input
-                type="password"
-                placeholder="New password"
-                value={newAdminPassword}
-                onChange={(e) => setNewAdminPassword(e.target.value)}
-                className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
-              />
-              <input
-                type="password"
-                placeholder="Confirm password"
-                value={confirmAdminPassword}
-                onChange={(e) => setConfirmAdminPassword(e.target.value)}
-                className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange"
-              />
+              <div className="relative">
+                <input
+                  type={showAdminCredentialsPassword ? "text" : "password"}
+                  placeholder="New password"
+                  value={newAdminPassword}
+                  onChange={(e) => setNewAdminPassword(e.target.value)}
+                  className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 pr-10 text-sm text-white outline-none focus:border-brand-orange"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAdminCredentialsPassword((prev) => !prev)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+                  aria-label={showAdminCredentialsPassword ? "Hide password" : "Show password"}
+                >
+                  {showAdminCredentialsPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showAdminCredentialsPassword ? "text" : "password"}
+                  placeholder="Confirm password"
+                  value={confirmAdminPassword}
+                  onChange={(e) => setConfirmAdminPassword(e.target.value)}
+                  className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2.5 pr-10 text-sm text-white outline-none focus:border-brand-orange"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAdminCredentialsPassword((prev) => !prev)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+                  aria-label={showAdminCredentialsPassword ? "Hide password" : "Show password"}
+                >
+                  {showAdminCredentialsPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
 
             <button
@@ -1135,6 +1415,19 @@ export default function AdminPage() {
             }`}
           >
             <BarChart3 size={16} /> Reports
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("lapReports");
+              if (registrations.length === 0) fetchRegistrations();
+            }}
+            className={`inline-flex items-center gap-2 px-4 py-3 font-semibold text-sm uppercase whitespace-nowrap transition ${
+              activeTab === "lapReports"
+                ? "border-b-2 border-brand-orange text-brand-orange"
+                : "text-zinc-400 hover:text-white"
+            }`}
+          >
+            <BarChart3 size={16} /> LAP Reports
           </button>
           <button
             onClick={() => setActiveTab("email")}
@@ -1817,6 +2110,7 @@ export default function AdminPage() {
                       type="date"
                       value={trialDateRangeStart}
                       onChange={(e) => setTrialDateRangeStart(e.target.value)}
+                      onClick={(e) => openDatePicker(e.currentTarget)}
                       className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                     />
                   </div>
@@ -1826,6 +2120,7 @@ export default function AdminPage() {
                       type="date"
                       value={trialDateRangeEnd}
                       onChange={(e) => setTrialDateRangeEnd(e.target.value)}
+                      onClick={(e) => openDatePicker(e.currentTarget)}
                       className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                     />
                   </div>
@@ -1924,6 +2219,7 @@ export default function AdminPage() {
                       type="date"
                       value={paymentDateRangeStart}
                       onChange={(e) => setPaymentDateRangeStart(e.target.value)}
+                      onClick={(e) => openDatePicker(e.currentTarget)}
                       className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                     />
                   </div>
@@ -1933,6 +2229,7 @@ export default function AdminPage() {
                       type="date"
                       value={paymentDateRangeEnd}
                       onChange={(e) => setPaymentDateRangeEnd(e.target.value)}
+                      onClick={(e) => openDatePicker(e.currentTarget)}
                       className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                     />
                   </div>
@@ -1964,19 +2261,20 @@ export default function AdminPage() {
                       <th className="px-4 py-3 text-left font-semibold text-zinc-300">Phone</th>
                       <th className="px-4 py-3 text-left font-semibold text-zinc-300">Plan</th>
                       <th className="px-4 py-3 text-left font-semibold text-zinc-300">Price</th>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-300">Payment</th>
                       <th className="px-4 py-3 text-left font-semibold text-zinc-300">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-700">
                     {paymentLoading ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">
+                        <td colSpan={8} className="px-4 py-4 text-center text-zinc-400">
                           Loading...
                         </td>
                       </tr>
                     ) : filterPaymentUsers().length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-4 text-center text-zinc-400">
+                        <td colSpan={8} className="px-4 py-4 text-center text-zinc-400">
                           {paymentUsers.length === 0 ? "No payment users yet. Load to see data." : "No users match the filter."}
                         </td>
                       </tr>
@@ -1989,6 +2287,38 @@ export default function AdminPage() {
                           <td className="px-4 py-3 text-zinc-300">{user.phone}</td>
                           <td className="px-4 py-3 text-brand-orange font-semibold">{user.planName || user.program}</td>
                           <td className="px-4 py-3 text-zinc-300">₹{user.planPrice}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-1">
+                              <span
+                                className={`inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  String(user.paidStatus || "UNPAID") === "PAID"
+                                    ? "bg-emerald-500/20 text-emerald-300"
+                                    : "bg-amber-500/20 text-amber-300"
+                                }`}
+                              >
+                                {String(user.paidStatus || "UNPAID")}
+                              </span>
+                              {String(user.paidStatus || "UNPAID") === "PAID" ? (
+                                <button
+                                  type="button"
+                                  disabled={statusUpdatingRow === Number(user.rowIndex)}
+                                  onClick={() => updateRegistrationPaidStatus(Number(user.rowIndex), "UNPAID")}
+                                  className="text-[11px] text-amber-300 hover:text-amber-200 disabled:opacity-70"
+                                >
+                                  Mark Unpaid
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={statusUpdatingRow === Number(user.rowIndex)}
+                                  onClick={() => updateRegistrationPaidStatus(Number(user.rowIndex), "PAID")}
+                                  className="text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-70"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-3">
                             <button
                               onClick={() => deletePaymentUser(user.rowIndex)}
@@ -2097,6 +2427,7 @@ export default function AdminPage() {
                       type="date"
                       value={dateRangeStart}
                       onChange={(e) => setDateRangeStart(e.target.value)}
+                      onClick={(e) => openDatePicker(e.currentTarget)}
                       className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                     />
                   </div>
@@ -2106,6 +2437,7 @@ export default function AdminPage() {
                       type="date"
                       value={dateRangeEnd}
                       onChange={(e) => setDateRangeEnd(e.target.value)}
+                      onClick={(e) => openDatePicker(e.currentTarget)}
                       className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                     />
                   </div>
@@ -2187,6 +2519,281 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
+            </section>
+          </div>
+        )}
+
+        {/* LAP Reports Tab */}
+        {activeTab === "lapReports" && (
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-display text-2xl uppercase tracking-wide">LAP Wise Registrations</h2>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={sendUnpaidLapReminders}
+                    disabled={isSendingUnpaidReminders}
+                    className="inline-flex items-center gap-2 rounded-lg border border-amber-400/60 bg-amber-400/10 px-4 py-2 text-sm font-semibold text-amber-300 transition hover:bg-amber-400/20 disabled:opacity-70"
+                  >
+                    <Mail size={14} /> {isSendingUnpaidReminders ? "Sending..." : "Send Unpaid Reminders"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={fetchRegistrations}
+                    disabled={registrationsLoading}
+                    className="inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700 disabled:opacity-70"
+                  >
+                    <RefreshCw size={14} /> {registrationsLoading ? "Loading..." : "Reload"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportToExcel(getVisibleLapRegistrations(), "lap-registrations")}
+                    className="inline-flex items-center gap-2 rounded-lg border border-brand-orange/50 px-4 py-2 text-sm font-semibold text-brand-orange transition hover:bg-brand-orange/10"
+                  >
+                    <Download size={14} /> Export CSV
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-zinc-700 bg-black/40 p-4 mb-6">
+                <h3 className="font-semibold text-sm uppercase tracking-wide text-zinc-300 mb-4">Filters</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">From Date</label>
+                    <input
+                      type="date"
+                      value={dateRangeStart}
+                      onChange={(e) => setDateRangeStart(e.target.value)}
+                      onClick={(e) => openDatePicker(e.currentTarget)}
+                      className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">To Date</label>
+                    <input
+                      type="date"
+                      value={dateRangeEnd}
+                      onChange={(e) => setDateRangeEnd(e.target.value)}
+                      onClick={(e) => openDatePicker(e.currentTarget)}
+                      className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <span className="text-xs uppercase tracking-[0.08em] text-zinc-400">Payment Status</span>
+                  {([
+                    ["ALL", "All"],
+                    ["PAID", "Paid"],
+                    ["UNPAID", "Unpaid"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setLapPaymentFilter(value)}
+                      className={`rounded-md border px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] transition ${
+                        lapPaymentFilter === value
+                          ? "border-brand-orange bg-brand-orange/15 text-brand-orange"
+                          : "border-zinc-700 text-zinc-300 hover:border-zinc-500"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-zinc-400">
+                  Every registration is kept as an independent row (same user can register for multiple LAP sessions).
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3 mb-6">
+                <div className="rounded-lg border border-zinc-700 bg-black/40 p-4">
+                  <p className="text-xs uppercase tracking-[0.08em] text-zinc-400">Total LAP Registrations</p>
+                  <p className="mt-2 text-2xl font-bold text-brand-orange">{getVisibleLapRegistrations().length}</p>
+                </div>
+                <div className="rounded-lg border border-zinc-700 bg-black/40 p-4">
+                  <p className="text-xs uppercase tracking-[0.08em] text-zinc-400">LAP Sessions</p>
+                  <p className="mt-2 text-2xl font-bold text-brand-orange">{Object.keys(groupLapRegistrations()).length}</p>
+                </div>
+                <div className="rounded-lg border border-zinc-700 bg-black/40 p-4">
+                  <p className="text-xs uppercase tracking-[0.08em] text-zinc-400">Date Range</p>
+                  <p className="mt-2 text-sm text-zinc-300">
+                    {dateRangeStart || dateRangeEnd ? `${dateRangeStart || "Any"} to ${dateRangeEnd || "Any"}` : "All"}
+                  </p>
+                </div>
+              </div>
+
+              {registrationsLoading ? (
+                <div className="rounded-lg border border-zinc-700 bg-black/40 p-6 text-center text-zinc-400">Loading LAP registrations...</div>
+              ) : getVisibleLapRegistrations().length === 0 ? (
+                <div className="rounded-lg border border-zinc-700 bg-black/40 p-6 text-center text-zinc-400">
+                  {registrations.length === 0 ? "No registrations loaded. Click reload to fetch data." : "No LAP registrations found for selected filters."}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {Object.entries(groupLapRegistrations()).map(([eventName, users]) => (
+                    <div key={eventName} className="rounded-xl border border-zinc-700 bg-black/30 p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-700 pb-3">
+                        <h3 className="text-lg font-bold text-brand-orange">{eventName}</h3>
+                        <span className="rounded-full border border-zinc-600 px-3 py-1 text-xs text-zinc-300">
+                          {users.length} registrations
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto rounded-lg border border-zinc-700">
+                        <table className="w-full text-sm">
+                          <thead className="border-b border-zinc-700 bg-black/40">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Date</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Name</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Email</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Phone</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Program</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Goal</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Weight</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Payment</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Details</th>
+                              <th className="px-4 py-3 text-left font-semibold text-zinc-300">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-700">
+                            {users.map((user, idx) => {
+                              const rowIndex = Number(user?.rowIndex ?? -1);
+                              const canDelete = Number.isFinite(rowIndex) && rowIndex >= 0;
+                              const isExpanded = canDelete && expandedLapRows.includes(rowIndex);
+
+                              return (
+                                <Fragment key={`${eventName}-${rowIndex}-${idx}`}>
+                                  <tr className="hover:bg-black/30 transition">
+                                    <td className="px-4 py-3 text-zinc-300">{new Date(user.submittedAt || user.timestamp).toLocaleDateString()}</td>
+                                    <td className="px-4 py-3 text-zinc-300">{user.name || "-"}</td>
+                                    <td className="px-4 py-3 text-zinc-300 break-words max-w-xs">{user.email || "-"}</td>
+                                    <td className="px-4 py-3 text-zinc-300">{user.phone || "-"}</td>
+                                    <td className="px-4 py-3 text-zinc-300">{user.program || user.planName || "-"}</td>
+                                    <td className="px-4 py-3 text-zinc-300">{user.goal || "-"}</td>
+                                    <td className="px-4 py-3 text-zinc-300">
+                                      {user.currentWeight || user.targetWeight
+                                        ? `${user.currentWeight || "?"} -> ${user.targetWeight || "?"} kg`
+                                        : "-"}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex flex-col gap-1">
+                                        <span
+                                          className={`inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                            String(user.paidStatus || "UNPAID") === "PAID"
+                                              ? "bg-emerald-500/20 text-emerald-300"
+                                              : "bg-amber-500/20 text-amber-300"
+                                          }`}
+                                        >
+                                          {String(user.paidStatus || "UNPAID")}
+                                        </span>
+                                        {String(user.paidStatus || "UNPAID") === "PAID" ? (
+                                          <button
+                                            type="button"
+                                            disabled={statusUpdatingRow === rowIndex}
+                                            onClick={() => updateRegistrationPaidStatus(rowIndex, "UNPAID")}
+                                            className="text-[11px] text-amber-300 hover:text-amber-200 disabled:opacity-70"
+                                          >
+                                            Mark Unpaid
+                                          </button>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            disabled={statusUpdatingRow === rowIndex}
+                                            onClick={() => updateRegistrationPaidStatus(rowIndex, "PAID")}
+                                            className="text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-70"
+                                          >
+                                            Mark Paid
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      {canDelete ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleLapDetails(rowIndex)}
+                                          className="text-brand-orange hover:text-orange-300 transition text-sm font-semibold"
+                                        >
+                                          {isExpanded ? "Hide" : "Expand"}
+                                        </button>
+                                      ) : (
+                                        <span className="text-xs text-zinc-500">Unavailable</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      {canDelete ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteLapRegistration(rowIndex)}
+                                          className="text-red-400 hover:text-red-300 transition text-sm font-semibold"
+                                        >
+                                          Delete
+                                        </button>
+                                      ) : (
+                                        <span className="text-xs text-zinc-500">No rowIndex</span>
+                                      )}
+                                    </td>
+                                  </tr>
+
+                                  {isExpanded ? (
+                                    <tr>
+                                      <td colSpan={10} className="px-4 py-3 bg-black/50">
+                                        <p className="mb-3 text-xs uppercase tracking-[0.08em] text-zinc-400">Full Form Details</p>
+                                        <div className="rounded-lg border border-zinc-700 bg-black p-3">
+                                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                            {[
+                                              ["Name", user.name],
+                                              ["Email", user.email],
+                                              ["Phone", user.phone],
+                                              ["Program", user.program],
+                                              ["LAP Session", user.planName],
+                                              ["Plan Price", user.planPrice ? `₹${user.planPrice}` : ""],
+                                              ["Goal", user.goal],
+                                              ["Batch", user.batch],
+                                              ["Age", user.age],
+                                              ["Current Weight", user.currentWeight],
+                                              ["Target Weight", user.targetWeight],
+                                              ["Gender", user.gender],
+                                              ["Strength Level", user.strengthLevel],
+                                              ["Preferred Slot", user.preferredSlot],
+                                              ["Start Date", user.startDate],
+                                              ["End Date", user.endDate],
+                                              ["Submitted At", user.submittedAt],
+                                              ["Row Index", user.rowIndex],
+                                              ["Payment Status", user.paidStatus],
+                                            ]
+                                              .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")
+                                              .map(([label, value]) => (
+                                              <div key={String(label)} className="rounded-md border border-zinc-800 bg-zinc-900/50 p-2">
+                                                <p className="text-[10px] uppercase tracking-[0.08em] text-zinc-500">{label}</p>
+                                                <p className="mt-1 break-words text-xs text-zinc-200">{String(value)}</p>
+                                              </div>
+                                            ))}
+                                          </div>
+
+                                          {user.notes ? (
+                                            <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/50 p-2">
+                                              <p className="text-[10px] uppercase tracking-[0.08em] text-zinc-500">Notes</p>
+                                              <p className="mt-1 whitespace-pre-wrap break-words text-xs text-zinc-200">
+                                                {String(user.notes)}
+                                              </p>
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ) : null}
+                                </Fragment>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           </div>
         )}
@@ -2304,21 +2911,31 @@ export default function AdminPage() {
                     className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                   />
 
-                  <input
-                    type="password"
-                    value={cmsData.emailSettings.password}
-                    onChange={(e) =>
-                      setCmsData((prev) => ({
-                        ...prev,
-                        emailSettings: {
-                          ...prev.emailSettings,
-                          password: e.target.value,
-                        },
-                      }))
-                    }
-                    placeholder="SMTP Password / App Password"
-                    className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showSmtpPassword ? "text" : "password"}
+                      value={cmsData.emailSettings.password}
+                      onChange={(e) =>
+                        setCmsData((prev) => ({
+                          ...prev,
+                          emailSettings: {
+                            ...prev.emailSettings,
+                            password: e.target.value,
+                          },
+                        }))
+                      }
+                      placeholder="SMTP Password / App Password"
+                      className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 pr-10 text-sm text-white outline-none focus:border-brand-orange"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSmtpPassword((prev) => !prev)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+                      aria-label={showSmtpPassword ? "Hide SMTP password" : "Show SMTP password"}
+                    >
+                      {showSmtpPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
 
                   <input
                     value={cmsData.emailSettings.fromName}
@@ -2371,13 +2988,18 @@ export default function AdminPage() {
                 </p>
 
                 <div className="mt-4 rounded-lg border border-zinc-700 bg-black/50 p-4">
-                  <p className="text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">SMTP Test</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-zinc-400 mb-3">Send Test Email</p>
+                  {/* Pre-formatted email preview */}
+                  <div className="mb-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-1">
+                    <p className="text-xs text-zinc-500">Subject: <span className="text-zinc-300">✅ SMTP Test — Wani&apos;s Club Level Up</span></p>
+                    <p className="text-xs text-zinc-500">Body: <span className="text-zinc-300">Branded HTML email confirming SMTP is working correctly.</span></p>
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                     <input
                       type="email"
                       value={smtpTestEmail}
                       onChange={(e) => setSmtpTestEmail(e.target.value)}
-                      placeholder="Recipient email for test"
+                      placeholder="Enter recipient email to test"
                       className="rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange"
                     />
                     <button
@@ -2386,13 +3008,38 @@ export default function AdminPage() {
                       disabled={smtpTestLoading}
                       className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-70"
                     >
-                      {smtpTestLoading ? "Testing..." : "Test SMTP"}
+                      {smtpTestLoading ? "Sending..." : "Send Test Email"}
                     </button>
                   </div>
-                  {smtpDiagnostics ? (
-                    <pre className="mt-3 max-h-48 overflow-auto rounded-lg border border-zinc-700 bg-black p-3 text-xs text-zinc-300">
-                      {smtpDiagnostics}
-                    </pre>
+                  {smtpTestResult ? (
+                    <div className={`mt-3 rounded-lg border p-3 ${
+                      smtpTestResult.ok
+                        ? "border-emerald-500/40 bg-emerald-500/10"
+                        : "border-red-500/40 bg-red-500/10"
+                    }`}>
+                      <p className={`text-sm font-semibold ${
+                        smtpTestResult.ok ? "text-emerald-300" : "text-red-300"
+                      }`}>
+                        {smtpTestResult.ok ? "✅ " : "❌ "}{smtpTestResult.message}
+                      </p>
+                      {smtpTestResult.suggestion ? (
+                        <p className="mt-2 text-xs text-amber-300">
+                          💡 <span className="font-semibold">Fix:</span> {smtpTestResult.suggestion}
+                        </p>
+                      ) : null}
+                      {smtpTestResult.technical ? (
+                        <p className="mt-1 text-xs text-zinc-500">Technical detail: {smtpTestResult.technical}</p>
+                      ) : null}
+                      {smtpTestResult.ok && smtpTestResult.details ? (
+                        <div className="mt-2 space-y-0.5 text-xs text-zinc-400">
+                          <p>From: {String((smtpTestResult.details as Record<string, unknown>).from ?? "")}</p>
+                          <p>Via: {String((smtpTestResult.details as Record<string, unknown>).host ?? (smtpTestResult.details as Record<string, unknown>).provider ?? "")}:{String((smtpTestResult.details as Record<string, unknown>).port ?? "")}</p>
+                          {(smtpTestResult.details as Record<string, unknown>).messageId ? (
+                            <p>Message ID: {String((smtpTestResult.details as Record<string, unknown>).messageId)}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               </div>
