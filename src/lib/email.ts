@@ -138,6 +138,55 @@ function resolveFormLabel(formType: string): string {
   return formType || "Website Form";
 }
 
+const CLUB_NAME = "Wani's Club Level Up";
+const COACH_NAME = "Coach Sayali Wani";
+const CONTACT_PHONE_DISPLAY = "+91 91582 43377";
+const CONTACT_PHONE_E164 = "919158243377";
+const WHATSAPP_URL = `https://wa.me/${CONTACT_PHONE_E164}?text=${encodeURIComponent(
+  "Hi Coach Sayali Wani, I have a query about Wani's Club Level Up."
+)}`;
+const CALL_URL = `tel:+${CONTACT_PHONE_E164}`;
+const WEBSITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "https://wanisclublevelup.vercel.app";
+const LOCATION_URL =
+  "https://www.google.com/maps/search/?api=1&query=Wani%27s+Club+Level+Up+Nashik";
+
+function buildTrialOfferHtml(formType: string): string {
+  if (normalizeFormType(formType) !== "trial") return "";
+  return "<div style=\"margin-top:14px;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,125,0,0.4);background:rgba(255,125,0,0.08);color:#f4f4f5\"><p style=\"margin:0;font-size:13px;line-height:1.5\"><strong style=\"color:#ff9f43\">Offer Included:</strong> Your trial includes <strong>1 complimentary shake</strong> during your 2-day pass.</p></div>";
+}
+
+function buildTrialOfferText(formType: string): string {
+  if (normalizeFormType(formType) !== "trial") return "";
+  return "\n\nOffer Included: Your trial includes 1 complimentary shake during your 2-day pass.";
+}
+
+function buildProfessionalSignatureHtml(): string {
+  return `<div style="margin-top:18px;padding-top:14px;border-top:1px solid #3f3f46;color:#d4d4d8">
+    <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#fafafa">${COACH_NAME}</p>
+    <p style="margin:0 0 10px 0;font-size:12px;color:#a1a1aa">${CLUB_NAME}</p>
+    <p style="margin:0 0 8px 0;font-size:12px;line-height:1.6;color:#d4d4d8">
+      Website: <a href="${WEBSITE_URL}" style="color:#ff9f43;text-decoration:none">${WEBSITE_URL}</a><br/>
+      Location: <a href="${LOCATION_URL}" style="color:#ff9f43;text-decoration:none">Open in Google Maps</a><br/>
+      Contact: <a href="${CALL_URL}" style="color:#ff9f43;text-decoration:none">${CONTACT_PHONE_DISPLAY}</a>
+    </p>
+    <div style="margin-top:10px">
+      <a href="${WHATSAPP_URL}" style="display:inline-block;margin-right:8px;padding:9px 14px;border-radius:10px;background:#22c55e;color:#041307;font-size:12px;font-weight:700;text-decoration:none">WhatsApp</a>
+      <a href="${CALL_URL}" style="display:inline-block;padding:9px 14px;border-radius:10px;background:#ff7d00;color:#111111;font-size:12px;font-weight:700;text-decoration:none">Call</a>
+    </div>
+  </div>`;
+}
+
+function buildProfessionalSignatureText(): string {
+  return `\n\n---\n${COACH_NAME}\n${CLUB_NAME}\nWebsite: ${WEBSITE_URL}\nLocation: ${LOCATION_URL}\nPhone: ${CONTACT_PHONE_DISPLAY}\nWhatsApp: ${WHATSAPP_URL}\nCall: ${CALL_URL}`;
+}
+
+function withEmailFooter({ html, text, formType }: { html: string; text: string; formType: string }) {
+  return {
+    html: `${html}${buildTrialOfferHtml(formType)}${buildProfessionalSignatureHtml()}`,
+    text: `${text}${buildTrialOfferText(formType)}${buildProfessionalSignatureText()}`,
+  };
+}
+
 function usingGlobalDefaultTemplates(emailTemplates: EmailTemplates): boolean {
   return (
     emailTemplates.userSubject === defaultEmailTemplates.userSubject &&
@@ -155,16 +204,16 @@ function resolveFormTemplates(context: SubmissionEmailContext): ResolvedTemplate
 
   if (formType === "trial") {
     return {
-      userSubject: "Your 2-Day Trial Request is Received - Wani's Club Level Up",
+      userSubject: "Your 2-Day Trial + Complimentary Shake is Confirmed - Wani's Club Level Up",
       userText:
-        "Hi {{name}}, your 2-Day Trial request is received. Preferred batch: {{batch}}. Our team will contact you shortly.",
+        "Hi {{name}}, your 2-Day Trial request is received. Offer included: 1 complimentary shake. Preferred batch: {{batch}}. Our team will contact you shortly.",
       userHtml:
-        "<div style=\"font-family:Arial,sans-serif;background:#0a0a0a;padding:24px\"><div style=\"max-width:640px;margin:0 auto;background:#111;border:1px solid #27272a;border-radius:14px;overflow:hidden\"><div style=\"padding:18px;background:linear-gradient(90deg,#ff7d00,#ff9f43);color:#111;font-weight:700\">Wani's Club Level Up</div><div style=\"padding:20px;color:#e4e4e7\"><h2 style=\"margin:0 0 10px 0;color:#fff\">Hi {{name}}, trial request confirmed</h2><p style=\"margin:0 0 8px 0\">Preferred batch: <b>{{batch}}</b></p><p style=\"margin:0 0 8px 0\">Goal: {{goal}}</p><p style=\"margin:0;color:#a1a1aa\">Our team will call you shortly with next steps.</p></div></div></div>",
+        "<div style=\"font-family:Arial,sans-serif;background:#0a0a0a;padding:24px\"><div style=\"max-width:640px;margin:0 auto;background:#111;border:1px solid #27272a;border-radius:14px;overflow:hidden\"><div style=\"padding:18px;background:linear-gradient(90deg,#ff7d00,#ff9f43);color:#111;font-weight:700\">Wani's Club Level Up</div><div style=\"padding:20px;color:#e4e4e7\"><h2 style=\"margin:0 0 10px 0;color:#fff\">Hi {{name}}, trial request confirmed</h2><p style=\"margin:0 0 8px 0\">Preferred batch: <b>{{batch}}</b></p><p style=\"margin:0 0 8px 0\">Goal: {{goal}}</p><p style=\"margin:0 0 8px 0\"><b>Bonus Offer:</b> 1 Complimentary Shake included.</p><p style=\"margin:0;color:#a1a1aa\">Our team will call you shortly with next steps.</p></div></div></div>",
       adminSubject: "New Trial Form Submission - {{name}}",
       adminText:
-        "New trial submission: {{name}} | {{email}} | {{phone}} | Batch: {{batch}} | Goal: {{goal}} | {{submittedAt}}",
+        "New trial submission: {{name}} | {{email}} | {{phone}} | Batch: {{batch}} | Goal: {{goal}} | Offer: 1 Complimentary Shake | {{submittedAt}}",
       adminHtml:
-        "<div style=\"font-family:Arial,sans-serif;background:#0a0a0a;padding:24px\"><div style=\"max-width:640px;margin:0 auto;background:#111;border:1px solid #27272a;border-radius:14px;overflow:hidden\"><div style=\"padding:18px;background:linear-gradient(90deg,#ff7d00,#ff9f43);color:#111;font-weight:700\">Admin Alert - Trial Form</div><div style=\"padding:20px;color:#e4e4e7\"><p style=\"margin:0 0 8px 0\"><b>Name:</b> {{name}}</p><p style=\"margin:0 0 8px 0\"><b>Email:</b> {{email}}</p><p style=\"margin:0 0 8px 0\"><b>Phone:</b> {{phone}}</p><p style=\"margin:0 0 8px 0\"><b>Batch:</b> {{batch}}</p><p style=\"margin:0 0 8px 0\"><b>Goal:</b> {{goal}}</p><p style=\"margin:0;color:#a1a1aa\">Submitted at {{submittedAt}}</p></div></div></div>",
+        "<div style=\"font-family:Arial,sans-serif;background:#0a0a0a;padding:24px\"><div style=\"max-width:640px;margin:0 auto;background:#111;border:1px solid #27272a;border-radius:14px;overflow:hidden\"><div style=\"padding:18px;background:linear-gradient(90deg,#ff7d00,#ff9f43);color:#111;font-weight:700\">Admin Alert - Trial Form</div><div style=\"padding:20px;color:#e4e4e7\"><p style=\"margin:0 0 8px 0\"><b>Name:</b> {{name}}</p><p style=\"margin:0 0 8px 0\"><b>Email:</b> {{email}}</p><p style=\"margin:0 0 8px 0\"><b>Phone:</b> {{phone}}</p><p style=\"margin:0 0 8px 0\"><b>Batch:</b> {{batch}}</p><p style=\"margin:0 0 8px 0\"><b>Goal:</b> {{goal}}</p><p style=\"margin:0 0 8px 0\"><b>Offer:</b> 1 Complimentary Shake</p><p style=\"margin:0;color:#a1a1aa\">Submitted at {{submittedAt}}</p></div></div></div>",
     };
   }
 
@@ -314,13 +363,20 @@ export async function sendSubmissionEmails(context: SubmissionEmailContext) {
     const userSubjectTemplate = useCmsTemplates ? emailTemplates.userSubject : formTemplates.userSubject;
     const userHtmlTemplate = useCmsTemplates ? emailTemplates.userHtml : formTemplates.userHtml;
     const userTextTemplate = useCmsTemplates ? emailTemplates.userText : formTemplates.userText;
+    const userHtml = applyTemplate(userHtmlTemplate, templateContext);
+    const userText = applyTemplate(userTextTemplate, templateContext);
+    const userContent = withEmailFooter({
+      html: userHtml,
+      text: userText,
+      formType: context.formType,
+    });
 
     await transporter.sendMail({
       from,
       to: context.email,
       subject: applyTemplate(userSubjectTemplate, templateContext),
-      html: applyTemplate(userHtmlTemplate, templateContext),
-      text: applyTemplate(userTextTemplate, templateContext),
+      html: userContent.html,
+      text: userContent.text,
     });
     sent.push(context.email);
   }
@@ -330,13 +386,20 @@ export async function sendSubmissionEmails(context: SubmissionEmailContext) {
     const adminSubjectTemplate = useCmsTemplates ? emailTemplates.adminSubject : formTemplates.adminSubject;
     const adminHtmlTemplate = useCmsTemplates ? emailTemplates.adminHtml : formTemplates.adminHtml;
     const adminTextTemplate = useCmsTemplates ? emailTemplates.adminText : formTemplates.adminText;
+    const adminHtml = applyTemplate(adminHtmlTemplate, templateContext);
+    const adminText = applyTemplate(adminTextTemplate, templateContext);
+    const adminContent = withEmailFooter({
+      html: adminHtml,
+      text: adminText,
+      formType: context.formType,
+    });
 
     await transporter.sendMail({
       from,
       to: adminRecipients.join(","),
       subject: applyTemplate(adminSubjectTemplate, templateContext),
-      html: applyTemplate(adminHtmlTemplate, templateContext),
-      text: applyTemplate(adminTextTemplate, templateContext),
+      html: adminContent.html,
+      text: adminContent.text,
     });
     sent.push(...adminRecipients);
   }

@@ -1,6 +1,61 @@
 import { NextResponse } from "next/server";
 import { loadCmsConfigFromRemote, sendSubmissionEmails } from "@/lib/email";
 
+type TrialOfferStatus = "eligible" | "already_redeemed";
+
+type TrialOfferStore = {
+  identities: Set<string>;
+};
+
+function getTrialOfferStore(): TrialOfferStore {
+  const key = "__waniTrialOfferStore";
+  const globalState = globalThis as typeof globalThis & {
+    [key]?: TrialOfferStore;
+  };
+
+  if (!globalState[key]) {
+    globalState[key] = { identities: new Set<string>() };
+  }
+
+  return globalState[key]!;
+}
+
+function normalizePhone(phone: string): string {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+}
+
+function normalizeEmail(email: string): string {
+  return String(email || "").trim().toLowerCase();
+}
+
+function getIdentityKeys(phone: string, email: string): string[] {
+  const keys: string[] = [];
+  const normalizedPhone = normalizePhone(phone);
+  const normalizedEmail = normalizeEmail(email);
+
+  if (normalizedPhone) keys.push(`phone:${normalizedPhone}`);
+  if (normalizedEmail) keys.push(`email:${normalizedEmail}`);
+  return keys;
+}
+
+function resolveTrialOfferStatus(phone: string, email: string): TrialOfferStatus {
+  const store = getTrialOfferStore();
+  const keys = getIdentityKeys(phone, email);
+  return keys.some((key) => store.identities.has(key))
+    ? "already_redeemed"
+    : "eligible";
+}
+
+function markTrialOfferRedeemed(phone: string, email: string) {
+  const store = getTrialOfferStore();
+  const keys = getIdentityKeys(phone, email);
+  for (const key of keys) {
+    store.identities.add(key);
+  }
+}
+
 function getSubmitUrls(): string[] {
   const directUrls = [
     process.env.APPS_SCRIPT_FORM_URL,
@@ -52,6 +107,10 @@ export async function POST(request: Request) {
     }
 
     const formType = String(payload?.formType || "").toLowerCase();
+    const isTrialSubmission = formType === "trial";
+    const trialOfferStatus: TrialOfferStatus = isTrialSubmission
+      ? resolveTrialOfferStatus(phone, email)
+      : "eligible";
     if (formType === "weight_loss_program") {
       const startDate = String((data as Record<string, unknown>).startDate || "").trim();
       const planName = String((data as Record<string, unknown>).planName || "").trim().toLowerCase();
@@ -78,8 +137,14 @@ export async function POST(request: Request) {
       }
     }
 
+    const mergedData = {
+      ...(data as Record<string, unknown>),
+      ...(isTrialSubmission ? { offerStatus: trialOfferStatus } : {}),
+    };
+
     const requestBody = JSON.stringify({
       ...payload,
+      data: mergedData,
       source: "wani-club-level-up-site",
       submittedAt: new Date().toISOString(),
     });
@@ -109,11 +174,16 @@ export async function POST(request: Request) {
           continue;
         }
 
+        if (isTrialSubmission) {
+          markTrialOfferRedeemed(phone, email);
+        }
+
         return NextResponse.json(
           {
             ok: true,
             message: text || "Submission forwarded to Apps Script.",
             target: submitUrl,
+            offerStatus: isTrialSubmission ? trialOfferStatus : undefined,
             email: await (async () => {
               try {
                 return await sendSubmissionEmails({
@@ -122,20 +192,20 @@ export async function POST(request: Request) {
                   name,
                   email,
                   phone,
-                  program: String((data as Record<string, unknown>).program || ""),
-                  planName: String((data as Record<string, unknown>).planName || ""),
-                  planPrice: String((data as Record<string, unknown>).planPrice || ""),
-                  goal: String((data as Record<string, unknown>).goal || ""),
-                  batch: String((data as Record<string, unknown>).batch || ""),
-                  age: String((data as Record<string, unknown>).age || ""),
-                  gender: String((data as Record<string, unknown>).gender || ""),
-                  strengthLevel: String((data as Record<string, unknown>).strengthLevel || ""),
-                  preferredSlot: String((data as Record<string, unknown>).preferredSlot || ""),
-                  notes: String((data as Record<string, unknown>).notes || ""),
-                  currentWeight: String((data as Record<string, unknown>).currentWeight || ""),
-                  targetWeight: String((data as Record<string, unknown>).targetWeight || ""),
-                  startDate: String((data as Record<string, unknown>).startDate || ""),
-                  endDate: String((data as Record<string, unknown>).endDate || ""),
+                  program: String((mergedData as Record<string, unknown>).program || ""),
+                  planName: String((mergedData as Record<string, unknown>).planName || ""),
+                  planPrice: String((mergedData as Record<string, unknown>).planPrice || ""),
+                  goal: String((mergedData as Record<string, unknown>).goal || ""),
+                  batch: String((mergedData as Record<string, unknown>).batch || ""),
+                  age: String((mergedData as Record<string, unknown>).age || ""),
+                  gender: String((mergedData as Record<string, unknown>).gender || ""),
+                  strengthLevel: String((mergedData as Record<string, unknown>).strengthLevel || ""),
+                  preferredSlot: String((mergedData as Record<string, unknown>).preferredSlot || ""),
+                  notes: String((mergedData as Record<string, unknown>).notes || ""),
+                  currentWeight: String((mergedData as Record<string, unknown>).currentWeight || ""),
+                  targetWeight: String((mergedData as Record<string, unknown>).targetWeight || ""),
+                  startDate: String((mergedData as Record<string, unknown>).startDate || ""),
+                  endDate: String((mergedData as Record<string, unknown>).endDate || ""),
                 });
               } catch (mailError) {
                 return {

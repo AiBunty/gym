@@ -1,33 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 
 interface TrialFormProps {
   isOpen: boolean;
   onClose: () => void;
+  batchOptions: string[];
 }
 
-export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [age, setAge] = useState("");
-  const [interests, setInterests] = useState("");
+export default function TrialOfferFormModal({ isOpen, onClose, batchOptions }: TrialFormProps) {
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    goal: "Weight Loss",
+    batch: batchOptions[0] || "6:00 AM – 7:00 AM",
+  });
+  const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
-  const [statusMessage, setStatusMessage] = useState("");
+  const [submittedOfferStatus, setSubmittedOfferStatus] = useState<"eligible" | "already_redeemed">("eligible");
+
+  useEffect(() => {
+    if (batchOptions.length === 0) return;
+    setFormData((prev) => ({
+      ...prev,
+      batch: prev.batch || batchOptions[0],
+    }));
+  }, [batchOptions]);
 
   if (!isOpen) return null;
 
   const resetForm = () => {
-    setName("");
-    setEmail("");
-    setPhone("");
-    setAge("");
-    setInterests("");
-    setStatus("idle");
-    setStatusMessage("");
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      goal: "Weight Loss",
+      batch: batchOptions[0] || "6:00 AM – 7:00 AM",
+    });
+    setSubmitted(false);
+    setSubmittedOfferStatus("eligible");
   };
 
   const handleClose = () => {
@@ -37,48 +50,49 @@ export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!name.trim() || !email.trim() || !phone.trim()) {
-      setStatus("error");
-      setStatusMessage("Please fill in name, email, and phone");
+
+    setIsSubmitting(true);
+
+    const response = await fetch("/api/submit", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        formType: "trial",
+        data: {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          goal: formData.goal || "Not specified",
+          batch: formData.batch,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      alert(result?.message || "Trial registration is currently unavailable.");
+      setIsSubmitting(false);
       return;
     }
 
-    setIsSubmitting(true);
-    setStatus("idle");
+    const result = await response.json().catch(() => null);
+    const resolvedOfferStatus =
+      result?.offerStatus === "already_redeemed" ? "already_redeemed" : "eligible";
 
-    try {
-      const response = await fetch("/api/submit/trial", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, phone, age, interests }),
-      });
-
-      const result = await response.json();
-
-      if (result.ok) {
-        setStatus("success");
-        setStatusMessage(
-          "Thank you! Your 2-day trial is booked.\n\nPlease bring:\n• Clean indoor shoes\n• Comfortable workout clothing\n• Napkin or small towel\n• Water bottle\n\nSee you at the club!"
-        );
-        setName("");
-        setEmail("");
-        setPhone("");
-        setAge("");
-        setInterests("");
-        setTimeout(() => {
-          handleClose();
-        }, 3200);
-      } else {
-        setStatus("error");
-        setStatusMessage(result.message || "Failed to submit. Please try again.");
-      }
-    } catch (error) {
-      setStatus("error");
-      setStatusMessage("Network error. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    const phone = "919158243377";
+    const offerLine =
+      resolvedOfferStatus === "already_redeemed"
+        ? "I want to book my *FREE 2-DAY TRIAL* again. Complimentary shake offer is *ALREADY REDEEMED*."
+        : "I want to claim my *FREE 2-DAY TRIAL + 1 COMPLIMENTARY SHAKE*.";
+    const msg = encodeURIComponent(
+      `Hi Coach Sayali! 🔥\n\n${offerLine} at Wani's Club Level Up.\n\n*Name:* ${formData.name}\n*Mobile:* ${formData.phone}\n*Email:* ${formData.email}\n*Fitness Goal:* ${formData.goal || "Not specified"}\n*Preferred Batch:* ${formData.batch}\n\nSee you at the gym!`
+    );
+    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+    setSubmittedOfferStatus(resolvedOfferStatus);
+    setIsSubmitting(false);
+    setSubmitted(true);
   };
 
   return (
@@ -88,9 +102,9 @@ export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps)
         <div className="flex items-center justify-between border-b border-zinc-700 p-6">
           <div>
             <h2 className="font-display text-xl uppercase tracking-wide text-brand-orange">
-              2-Day Free Trial
+              2-Day Free Trial + Complimentary Shake
             </h2>
-            <p className="text-xs text-zinc-400 mt-1">No commitment. Just experience our programs.</p>
+            <p className="text-xs text-zinc-400 mt-1">Same trial form, same process. No extra steps.</p>
           </div>
           <button
             onClick={handleClose}
@@ -110,102 +124,123 @@ export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps)
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">
-              Full Name *
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
-              className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange transition"
-              disabled={isSubmitting}
-            />
-          </div>
+          {submitted ? (
+            <div className="py-4 text-center">
+              <p className="text-4xl">🎉</p>
+              <p className="mt-3 text-lg font-semibold text-white">
+                {submittedOfferStatus === "already_redeemed"
+                  ? "Thank you! Your 2-day trial is confirmed. Complimentary shake offer is already redeemed."
+                  : "Thank you! Your free trial + complimentary shake booking is confirmed."}
+              </p>
+              <p className="mt-2 text-sm text-zinc-300">Please bring these items for your workout:</p>
+              <ul className="mx-auto mt-3 max-w-sm space-y-2 rounded-xl border border-zinc-700 bg-zinc-950/70 px-4 py-3 text-left text-sm text-zinc-200">
+                <li>• Clean indoor shoes</li>
+                <li>• Comfortable workout clothing</li>
+                <li>• Napkin or small towel</li>
+                <li>• Water bottle</li>
+              </ul>
+              <p className="mt-3 text-sm text-zinc-300">WhatsApp is opening with your trial details. See you at the club.</p>
+              <button
+                type="button"
+                onClick={() => setSubmitted(false)}
+                className="mt-5 rounded-xl bg-zinc-800 px-5 py-2 text-sm text-zinc-300 hover:bg-zinc-700"
+              >
+                Submit again
+              </button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="mb-1 block text-sm text-zinc-400">Your Name</label>
+                <input
+                  required
+                  type="text"
+                  value={formData.name}
+                  placeholder="Enter your name"
+                  className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                  disabled={isSubmitting}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                />
+              </div>
 
-          <div>
-            <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">
-              Email *
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
-              className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange transition"
-              disabled={isSubmitting}
-            />
-          </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm text-zinc-400">Mobile Number</label>
+                  <input
+                    required
+                    type="tel"
+                    inputMode="numeric"
+                    value={formData.phone}
+                    placeholder="Enter mobile number"
+                    className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                    disabled={isSubmitting}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm text-zinc-400">Email</label>
+                  <input
+                    required
+                    type="email"
+                    value={formData.email}
+                    placeholder="Enter your email"
+                    className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                    disabled={isSubmitting}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  />
+                </div>
+              </div>
 
-          <div>
-            <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">
-              Phone *
-            </label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+91 XXXXX XXXXX"
-              className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange transition"
-              disabled={isSubmitting}
-            />
-          </div>
+              <div>
+                <label className="mb-1 block text-sm text-zinc-400">Fitness Goal</label>
+                <select
+                  required
+                  value={formData.goal}
+                  className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                  disabled={isSubmitting}
+                  onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+                >
+                  <option>Weight Loss</option>
+                  <option>Fat Loss</option>
+                  <option>Muscle Gain</option>
+                  <option>Strength Training</option>
+                  <option>General Fitness</option>
+                  <option>Mobility and Flexibility</option>
+                </select>
+              </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">
-                Age
-              </label>
-              <input
-                type="number"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                placeholder="25"
-                className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange transition"
+              <div>
+                <label className="mb-1 block text-sm text-zinc-400">Preferred Batch</label>
+                <select
+                  value={formData.batch}
+                  className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-[#ff7d00]"
+                  disabled={isSubmitting}
+                  onChange={(e) => setFormData({ ...formData, batch: e.target.value })}
+                >
+                  {(batchOptions.length > 0
+                    ? batchOptions
+                    : ["6:00 AM – 7:00 AM", "7:00 AM – 8:00 AM", "8:00 AM – 9:00 AM", "5:00 PM – 6:00 PM", "7:00 PM – 8:00 PM"]).map((batch) => (
+                    <option key={batch}>{batch}</option>
+                  ))}
+                </select>
+                <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+                  <span className="mt-0.5 text-base leading-none">⚠️</span>
+                  <p className="text-xs leading-relaxed text-red-300">
+                    <span className="font-semibold text-red-400">Batch slots are limited!</span> Each batch has a fixed capacity - once full, you&apos;ll be moved to a waitlist and may lose your preferred timing. Secure your spot now before it&apos;s gone!
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="submit"
                 disabled={isSubmitting}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs uppercase tracking-[0.08em] text-zinc-400 mb-2">
-                Interests
-              </label>
-              <input
-                type="text"
-                value={interests}
-                onChange={(e) => setInterests(e.target.value)}
-                placeholder="e.g., Weight Loss"
-                className="w-full rounded-lg border border-zinc-700 bg-black px-3 py-2 text-sm text-white outline-none focus:border-brand-orange transition"
-                disabled={isSubmitting}
-              />
-            </div>
-          </div>
-
-          {status === "success" && (
-            <div className="whitespace-pre-line rounded-lg border border-green-500 bg-green-500/20 px-3 py-2 text-sm text-green-300">
-              {statusMessage}
-            </div>
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-orange py-4 font-bold uppercase tracking-wide text-black shadow-[0_0_18px_rgba(255,125,0,0.4)] transition hover:brightness-110 disabled:opacity-70"
+              >
+                {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : null}
+                {isSubmitting ? "Opening WhatsApp..." : "Claim Free Trial + Shake"}
+              </button>
+            </>
           )}
-
-          {status === "error" && (
-            <div className="rounded-lg bg-red-500/20 border border-red-500 px-3 py-2 text-sm text-red-300">
-              {statusMessage}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-orange px-4 py-2.5 font-bold text-black uppercase tracking-wide transition hover:brightness-110 disabled:opacity-50"
-          >
-            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : null}
-            {isSubmitting ? "Submitting..." : "Start Free Trial"}
-          </button>
-
-          <p className="text-xs text-zinc-500 text-center">
-            We&apos;ll send trial details to your email
-          </p>
         </form>
       </div>
     </div>

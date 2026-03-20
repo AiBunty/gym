@@ -49,7 +49,7 @@ const FAQ_DB = [
   {
     keywords: ["class", "classes", "yoga", "zumba", "crossfit", "aerobics", "program", "activity", "workout", "pillar"],
     answer:
-      "We cover everything under our Three Pillars:\n\n💪 STRENGTH — Weight Training, CrossFit & Functional Fitness\n⚡ ENERGY — High-Intensity Aerobics & Zumba\n🌸 BALANCE — Yoga, Sound Healing & Outdoor Treks\n\nAll group classes are included in every membership plan!",
+      "We cover everything under our Three Pillars:\n\n💪 STRENGTH — Weight Training, CrossFit & Functional Fitness\n⚡ ENERGY — High-Intensity Workouts\n🌸 BALANCE — Yoga\n\nAll group classes are included in every membership plan!",
   },
   {
     keywords: ["contact", "call", "phone", "number", "whatsapp", "reach", "talk", "message"],

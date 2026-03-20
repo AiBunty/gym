@@ -47,12 +47,12 @@ const pillars = [
   },
   {
     title: "ENERGY",
-    description: "High-Intensity Aerobics & Zumba.",
+    description: "High-Intensity Workouts.",
     icon: Zap,
   },
   {
     title: "BALANCE",
-    description: "Yoga, Sound Healing & Outdoor Treks.",
+    description: "Yoga.",
     icon: Flower2,
   },
 ];
@@ -67,7 +67,9 @@ type SubmissionPayload = {
   data: Record<string, string>;
 };
 
-async function submitToGoogleSheets(payload: SubmissionPayload): Promise<{ ok: boolean; message?: string }> {
+async function submitToGoogleSheets(
+  payload: SubmissionPayload
+): Promise<{ ok: boolean; message?: string; offerStatus?: "eligible" | "already_redeemed" }> {
   try {
     const response = await fetch("/api/submit", {
       method: "POST",
@@ -82,7 +84,13 @@ async function submitToGoogleSheets(payload: SubmissionPayload): Promise<{ ok: b
       return { ok: false, message: result?.message || "Submission failed." };
     }
 
-    return { ok: true };
+    const result = await response.json().catch(() => null);
+    return {
+      ok: true,
+      message: result?.message,
+      offerStatus:
+        result?.offerStatus === "already_redeemed" ? "already_redeemed" : "eligible",
+    };
   } catch {
     return { ok: false, message: "Submission failed due to network error." };
   }
@@ -262,6 +270,11 @@ export default function Home() {
 
   const claimTrialFromPopup = () => {
     dismissTrialPromoPopup();
+    document.getElementById("trial-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleFreeTrialCta = () => {
+    setShowTrialForm(true);
     document.getElementById("trial-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -471,12 +484,21 @@ export default function Home() {
           whileInView="visible"
           viewport={{ once: true, amount: 0.4 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
-          className="my-6 rounded-2xl border border-brand-orange/50 bg-brand-orange/15 px-5 py-6 text-center"
+          className="my-6 rounded-2xl border-2 border-brand-orange bg-gradient-to-r from-brand-orange/35 via-brand-orange/20 to-brand-orange/35 px-5 py-6 text-center shadow-[0_0_28px_rgba(255,125,0,0.35)]"
         >
-          <p className="font-display text-xl tracking-wide sm:text-2xl">
-            {"\u{1F381}"} GUEST PASS: 2-DAY FREE TRIAL. No booking needed - just
-            walk in during batch timings!
+          <p className="inline-flex items-center rounded-full border border-brand-orange/70 bg-[#000000] px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] text-brand-orange">
+            Limited-Time Walk-In Access
           </p>
+          <p className="mt-3 font-display text-xl tracking-wide text-white sm:text-2xl">
+            {"\u{1F381}"} GUEST PASS: 2-DAY FREE TRIAL + 1 COMPLIMENTARY SHAKE. No booking needed - just walk in during batch timings!
+          </p>
+          <button
+            type="button"
+            onClick={handleFreeTrialCta}
+            className="mt-4 rounded-full bg-brand-orange px-5 py-2 text-sm font-bold uppercase tracking-wide text-black transition hover:brightness-110"
+          >
+            Claim Free Trial
+          </button>
         </motion.section>
 
         {/* ── Schedule ── */}
@@ -619,6 +641,7 @@ export default function Home() {
                 {liveLapPlans.map((plan, index) => {
                   const program = getLapProgram(plan);
                   const registrationWindow = getLapRegistrationWindow(plan);
+                  const isFirstLiveLapCard = index === 0;
                   const label = program === "10 Days" ? "Best Value" : "Quick Start";
                   const cardClass = program === "10 Days"
                     ? "flex h-full flex-col rounded-2xl border border-brand-orange/50 bg-gradient-to-br from-brand-orange/12 via-zinc-900/88 to-zinc-950 p-6 text-left shadow-[0_18px_40px_rgba(0,0,0,0.24)] ring-1 ring-brand-orange/25"
@@ -633,8 +656,8 @@ export default function Home() {
                       className={cardClass}
                     >
                       <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-orange">{label}</p>
-                      <h3 className="mt-2 text-2xl font-bold text-white">{plan.title}</h3>
-                      <p className="mt-2 text-xs uppercase tracking-[0.1em] text-zinc-400">
+                      <h3 className={`lap-card-title mt-2 text-2xl font-bold ${isFirstLiveLapCard ? "first-lap-title text-[#ffffff]" : "text-white"}`}>{plan.title}</h3>
+                      <p className={`mt-2 text-xs uppercase tracking-[0.1em] ${isFirstLiveLapCard ? "text-[#ffffff]" : "text-zinc-400"}`}>
                         {plan.startDate} to {plan.endDate} • {plan.numberOfDays} days
                       </p>
                       {registrationWindow.isEndingSoon ? (
@@ -709,7 +732,7 @@ export default function Home() {
                       className="rounded-2xl border border-brand-orange/25 bg-gradient-to-br from-brand-orange/10 via-zinc-900/60 to-zinc-950/80 p-6 shadow-[0_14px_40px_rgba(0,0,0,0.24)]"
                     >
                       <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-orange">Upcoming</p>
-                      <h3 className="mt-2 text-2xl font-bold text-white">{plan.title}</h3>
+                      <h3 className="lap-card-title mt-2 text-2xl font-bold text-white">{plan.title}</h3>
                       <p className="mt-2 text-xs uppercase tracking-[0.1em] text-zinc-400">
                         Starts {plan.startDate} • {plan.numberOfDays} days
                       </p>
@@ -862,6 +885,24 @@ export default function Home() {
       <SiteFooter />
 
       {/* ── Floating Contact ── */}
+      <button
+        type="button"
+        onClick={handleFreeTrialCta}
+        aria-label="Book free trial"
+        className="fixed left-0 top-1/2 z-50 hidden -translate-y-1/2 rounded-r-2xl border border-brand-orange/70 bg-brand-orange px-2 py-5 text-xs font-black uppercase tracking-[0.12em] text-black shadow-[0_10px_30px_rgba(255,125,0,0.45)] transition hover:brightness-110 sm:flex"
+      >
+        <span className="[writing-mode:vertical-rl] [text-orientation:mixed]">Free Trial</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={handleFreeTrialCta}
+        aria-label="Book free trial"
+        className="fixed bottom-6 left-4 z-50 rounded-full border border-brand-orange/60 bg-brand-orange px-4 py-2 text-xs font-extrabold uppercase tracking-[0.08em] text-black shadow-[0_10px_24px_rgba(255,125,0,0.35)] transition hover:brightness-110 sm:hidden"
+      >
+        Free Trial
+      </button>
+
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-4">
         <a
           href="tel:9158243377"
@@ -917,7 +958,11 @@ export default function Home() {
       />
 
       <PlanEnquiryModal selectedPlan={selectedPlan} onClose={() => setSelectedPlan(null)} />
-      <TrialOfferFormModal isOpen={showTrialForm} onClose={() => setShowTrialForm(false)} />
+      <TrialOfferFormModal
+        isOpen={showTrialForm}
+        onClose={() => setShowTrialForm(false)}
+        batchOptions={[...visibleMorningTimings, ...visibleEveningTimings]}
+      />
     </div>
   );
 }
@@ -1045,7 +1090,7 @@ function TrialPromoPopup({ open, onClose, onClaim }: TrialPromoPopupProps) {
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.14em] text-brand-orange">Limited Offer</p>
-            <h3 className="mt-1 font-display text-2xl uppercase tracking-wide text-white sm:text-3xl">Free 2-Day Trial</h3>
+            <h3 className="mt-1 font-display text-2xl uppercase tracking-wide text-white sm:text-3xl">Free 2-Day Trial + Shake</h3>
           </div>
           <button
             type="button"
@@ -1058,7 +1103,7 @@ function TrialPromoPopup({ open, onClose, onClaim }: TrialPromoPopupProps) {
         </div>
 
         <p className="text-sm text-zinc-300 sm:text-base">
-          We are offering a <span className="font-semibold text-brand-orange">2-day free trial</span>. Fill the trial form to register and visit the club without any calls.
+          We are offering a <span className="font-semibold text-brand-orange">2-day free trial + 1 complimentary shake</span>. Fill the trial form to register and visit the club without any calls.
         </p>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -1067,7 +1112,7 @@ function TrialPromoPopup({ open, onClose, onClaim }: TrialPromoPopupProps) {
             onClick={onClaim}
             className="inline-flex w-full items-center justify-center rounded-xl bg-brand-orange px-4 py-3 font-bold text-black transition hover:brightness-110"
           >
-            Fill Trial Form
+            Claim Free Trial + Shake
           </button>
           <button
             type="button"
@@ -1972,6 +2017,7 @@ function TrialForm({ batchOptions }: TrialFormProps) {
   });
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittedOfferStatus, setSubmittedOfferStatus] = useState<"eligible" | "already_redeemed">("eligible");
 
   useEffect(() => {
     if (batchOptions.length === 0) return;
@@ -2004,10 +2050,16 @@ function TrialForm({ batchOptions }: TrialFormProps) {
     }
 
     const phone = "919158243377";
+    const resolvedOfferStatus = submitResult.offerStatus || "eligible";
+    const offerLine =
+      resolvedOfferStatus === "already_redeemed"
+        ? "I want to book my *FREE 2-DAY TRIAL* again. Complimentary shake offer is *ALREADY REDEEMED*."
+        : "I want to claim my *FREE 2-DAY TRIAL + 1 COMPLIMENTARY SHAKE*.";
     const msg = encodeURIComponent(
-      `Hi Coach Sayali! 🔥\n\nI want to claim my *FREE 2-DAY TRIAL* at Wani's Club Level Up.\n\n*Name:* ${formData.name}\n*Mobile:* ${formData.phone}\n*Email:* ${formData.email}\n*Fitness Goal:* ${formData.goal || "Not specified"}\n*Preferred Batch:* ${formData.batch}\n\nSee you at the gym!`
+      `Hi Coach Sayali! 🔥\n\n${offerLine} at Wani's Club Level Up.\n\n*Name:* ${formData.name}\n*Mobile:* ${formData.phone}\n*Email:* ${formData.email}\n*Fitness Goal:* ${formData.goal || "Not specified"}\n*Preferred Batch:* ${formData.batch}\n\nSee you at the gym!`
     );
     window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+    setSubmittedOfferStatus(resolvedOfferStatus);
     setIsSubmitting(false);
     setSubmitted(true);
   };
@@ -2025,10 +2077,23 @@ function TrialForm({ batchOptions }: TrialFormProps) {
         Claim Your <span className="text-brand-orange">Free 2-Day Pass</span>
       </h3>
 
+      <div className="mb-5 rounded-xl border border-brand-orange/40 bg-brand-orange/10 px-4 py-3">
+        <p className="text-center text-xs font-semibold uppercase tracking-[0.12em] text-brand-orange">
+          Hear About The Offer Below
+        </p>
+        <p className="mt-1 text-center text-sm text-white">
+          Claim your Free 2-Day Pass and get <span className="font-semibold text-brand-orange">1 Complimentary Shake</span> on your trial visit.
+        </p>
+      </div>
+
       {submitted ? (
         <div className="py-8 text-center">
           <p className="text-4xl">🎉</p>
-          <p className="mt-3 text-lg font-semibold text-white">Thank you! Your free trial booking is confirmed.</p>
+          <p className="mt-3 text-lg font-semibold text-white">
+            {submittedOfferStatus === "already_redeemed"
+              ? "Thank you! Your 2-day trial is confirmed. Complimentary shake offer is already redeemed."
+              : "Thank you! Your free trial + complimentary shake booking is confirmed."}
+          </p>
           <p className="mt-2 text-sm text-zinc-300">Please bring these items for your workout:</p>
           <ul className="mx-auto mt-3 max-w-sm space-y-2 rounded-xl border border-zinc-700 bg-zinc-950/70 px-4 py-3 text-left text-sm text-zinc-200">
             <li>• Clean indoor shoes</li>
