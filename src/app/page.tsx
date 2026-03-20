@@ -103,6 +103,7 @@ export default function Home() {
   const [selectedLapPlan, setSelectedLapPlan] = useState<LapPlan | null>(null);
   const [showTrialForm, setShowTrialForm] = useState(false);
   const [showPtRegistration, setShowPtRegistration] = useState(false);
+  const [showTrialPromoPopup, setShowTrialPromoPopup] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isClientMounted, setIsClientMounted] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -231,6 +232,38 @@ export default function Home() {
   useEffect(() => {
     setPtImageIndex(0);
   }, [personalTraining.imageUrl]);
+
+  useEffect(() => {
+    if (!isClientMounted) return;
+
+    const popupKey = "trialPromoPopupDismissedAt";
+    const lastDismissedAt = Number(window.localStorage.getItem(popupKey) || 0);
+    const dismissCooldownMs = 6 * 60 * 60 * 1000;
+
+    if (Number.isFinite(lastDismissedAt) && Date.now() - lastDismissedAt < dismissCooldownMs) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowTrialPromoPopup(true);
+    }, 900);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isClientMounted]);
+
+  const dismissTrialPromoPopup = () => {
+    setShowTrialPromoPopup(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("trialPromoPopupDismissedAt", String(Date.now()));
+    }
+  };
+
+  const claimTrialFromPopup = () => {
+    dismissTrialPromoPopup();
+    document.getElementById("trial-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-black text-white">
@@ -816,7 +849,7 @@ export default function Home() {
         ) : null}
 
         {/* ── FAQ Chat ── */}
-        <FaqChatSection />
+        <FaqChatSection plans={plans} batchTimings={batchTimings} personalTraining={personalTraining} />
 
         {/* ── Trial Form ── */}
         <TrialForm batchOptions={[...visibleMorningTimings, ...visibleEveningTimings]} />
@@ -852,6 +885,12 @@ export default function Home() {
         open={showFeaturedPopup && featuredEvent.enabled}
         eventData={featuredEvent}
         onClose={() => setShowFeaturedPopup(false)}
+      />
+
+      <TrialPromoPopup
+        open={showTrialPromoPopup}
+        onClose={dismissTrialPromoPopup}
+        onClaim={claimTrialFromPopup}
       />
 
       <ProgramRegistrationModal
@@ -970,6 +1009,72 @@ function FeaturedEventPopup({ open, eventData, onClose }: FeaturedEventPopupProp
             className="rounded-xl bg-brand-orange px-5 py-2.5 text-sm font-bold text-black transition hover:brightness-110"
           >
             {eventData.ctaText || "Explore"}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+type TrialPromoPopupProps = {
+  open: boolean;
+  onClose: () => void;
+  onClaim: () => void;
+};
+
+function TrialPromoPopup({ open, onClose, onClaim }: TrialPromoPopupProps) {
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[92] flex items-center justify-center bg-black/65 px-4 py-6 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 26, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+        className="w-full max-w-xl rounded-3xl border border-brand-orange/35 bg-zinc-950 p-6 shadow-[0_0_36px_rgba(255,125,0,0.2)] sm:p-7"
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-brand-orange">Limited Offer</p>
+            <h3 className="mt-1 font-display text-2xl uppercase tracking-wide text-white sm:text-3xl">Free 2-Day Trial</h3>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
+          >
+            Close
+          </button>
+        </div>
+
+        <p className="text-sm text-zinc-300 sm:text-base">
+          We are offering a <span className="font-semibold text-brand-orange">2-day free trial</span>. Fill the trial form to register and visit the club without any calls.
+        </p>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            onClick={onClaim}
+            className="inline-flex w-full items-center justify-center rounded-xl bg-brand-orange px-4 py-3 font-bold text-black transition hover:brightness-110"
+          >
+            Fill Trial Form
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex w-full items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 font-semibold text-zinc-200 transition hover:border-zinc-500"
+          >
+            Maybe Later
           </button>
         </div>
       </motion.div>
@@ -1158,7 +1263,7 @@ function ProgramRegistrationModal({ open, initialProgram, eventData, onClose }: 
 
         {submitDone ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-            <CheckCircle2 size={16} className="shrink-0" /> Registered! WhatsApp is opening with your details.
+            <CheckCircle2 size={16} className="shrink-0" /> Thank you! Registration received. WhatsApp is opening with your details.
           </div>
         ) : isSubmitting ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
@@ -1356,7 +1461,7 @@ function LapRegistrationModal({ open, initialProgram, selectedPlan, onClose }: L
 
         {submitDone ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-            <CheckCircle2 size={16} className="shrink-0" /> Registered! WhatsApp is opening with your details.
+            <CheckCircle2 size={16} className="shrink-0" /> Thank you! Registration received. WhatsApp is opening with your details.
           </div>
         ) : isSubmitting ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
@@ -1558,7 +1663,7 @@ function PersonalTrainingModal({ open, personalTraining, onClose }: PersonalTrai
 
         {submitDone ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-            <CheckCircle2 size={16} className="shrink-0" /> Submitted! WhatsApp is opening with your details.
+            <CheckCircle2 size={16} className="shrink-0" /> Thank you! Submission received. WhatsApp is opening with your details.
           </div>
         ) : isSubmitting ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
@@ -1750,7 +1855,7 @@ function PlanEnquiryModal({ selectedPlan, onClose }: PlanEnquiryModalProps) {
 
         {submitDone ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-            <CheckCircle2 size={16} className="shrink-0" /> Submitted! WhatsApp is opening with your details.
+            <CheckCircle2 size={16} className="shrink-0" /> Thank you! Submission received. WhatsApp is opening with your details.
           </div>
         ) : isSubmitting ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-sm text-brand-orange">
@@ -1923,9 +2028,15 @@ function TrialForm({ batchOptions }: TrialFormProps) {
       {submitted ? (
         <div className="py-8 text-center">
           <p className="text-4xl">🎉</p>
-          <p className="mt-3 text-lg font-semibold text-white">
-            WhatsApp is opening — see you at the gym!
-          </p>
+          <p className="mt-3 text-lg font-semibold text-white">Thank you! Your free trial booking is confirmed.</p>
+          <p className="mt-2 text-sm text-zinc-300">Please bring these items for your workout:</p>
+          <ul className="mx-auto mt-3 max-w-sm space-y-2 rounded-xl border border-zinc-700 bg-zinc-950/70 px-4 py-3 text-left text-sm text-zinc-200">
+            <li>• Clean indoor shoes</li>
+            <li>• Comfortable workout clothing</li>
+            <li>• Napkin or small towel</li>
+            <li>• Water bottle</li>
+          </ul>
+          <p className="mt-3 text-sm text-zinc-300">WhatsApp is opening with your trial details. See you at the club.</p>
           <button
             onClick={() => setSubmitted(false)}
             className="mt-5 rounded-xl bg-zinc-800 px-5 py-2 text-sm text-zinc-300 hover:bg-zinc-700"

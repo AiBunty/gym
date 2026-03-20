@@ -1,8 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, Send, Sparkles } from "lucide-react";
+import {
+  defaultBatchTimings,
+  defaultPersonalTraining,
+  defaultPlans,
+  type BatchTimings,
+  type PersonalTraining,
+  type Plan,
+} from "@/lib/cms";
 
 /* ─────────────────────────────────────────────
    FAQ Database  (keyword-matched)
@@ -102,8 +110,95 @@ const SUGGESTIONS = [
   "What should I bring to the gym?",
 ];
 
-function findAnswer(query: string): string {
+const FREE_TRIAL_ANSWER =
+  "Yes! We are offering a FREE 2-Day Trial. Please fill the trial form to book your trial slot and visit the club without calling.\n\n👉 [Book Your Free Trial](/#trial-form)\n\nAfter submitting, we will confirm your visit details.";
+
+type DynamicAnswerBundle = {
+  membership: string;
+  timing: string;
+  personalTraining: string;
+};
+
+function isLapPlan(plan: Plan): boolean {
+  const name = (plan.name || "").toLowerCase();
+  const attendance = (plan.attendance || "").toLowerCase();
+  return name.includes("lap") || attendance.includes("lap");
+}
+
+function buildMembershipAnswer(plans: Plan[]): string {
+  const activeMembershipPlans = plans.filter((plan) => !plan.inactive && !isLapPlan(plan));
+  if (activeMembershipPlans.length === 0) {
+    return "Our membership plans are being updated right now. Please call/WhatsApp Coach Sayali at 9158243377 for the latest fee details.";
+  }
+
+  const planLines = activeMembershipPlans.map((plan) => {
+    const topFeatures = (plan.features || []).filter(Boolean).slice(0, 3);
+    const featuresText = topFeatures.length > 0 ? `\n   ${topFeatures.join(" • ")}` : "";
+    return `💰 ${plan.name} — ₹${plan.price}${featuresText}`;
+  });
+
+  return `Our current membership plans are:\n\n${planLines.join("\n\n")}\n\nThese are live website plans (inactive plans are automatically hidden).`;
+}
+
+function buildBatchTimingAnswer(batchTimings: BatchTimings): string {
+  const visibleMorning = (batchTimings.morning || []).filter(
+    (_, index) => !batchTimings.inactiveTimings?.morning?.[String(index)]
+  );
+  const visibleEvening = (batchTimings.evening || []).filter(
+    (_, index) => !batchTimings.inactiveTimings?.evening?.[String(index)]
+  );
+
+  const lines: string[] = [];
+  if (visibleMorning.length > 0) {
+    lines.push(`🌅 Morning: ${visibleMorning.join(" | ")}`);
+  }
+  if (visibleEvening.length > 0) {
+    lines.push(`🌆 Evening: ${visibleEvening.join(" | ")}`);
+  }
+
+  if (lines.length === 0) {
+    return "Batch timings are temporarily being updated. Please call/WhatsApp Coach Sayali at 9158243377 for today's slots.";
+  }
+
+  const note = batchTimings.note ? `\n\n${batchTimings.note}` : "";
+  return `Here are our currently active workout batch timings:\n\n${lines.join("\n")}${note}`;
+}
+
+function buildPersonalTrainingAnswer(personalTraining: PersonalTraining): string {
+  if (!personalTraining.enabled) {
+    return "Personal Training is currently unavailable for new bookings. Please contact Coach Sayali at 9158243377 to check when PT slots reopen.";
+  }
+
+  const features = (personalTraining.features || []).filter(Boolean);
+  const featureLines = features.length > 0 ? `\n\n✅ PT includes:\n${features.map((item) => `• ${item}`).join("\n")}` : "";
+
+  return `Absolutely! 💪 ${personalTraining.title} is available.\n\n💰 Current PT fee: ₹${personalTraining.price}${featureLines}\n\n📲 To book PT, contact Coach Sayali directly: 9158243377`;
+}
+
+function findAnswer(query: string, dynamicAnswers: DynamicAnswerBundle): string {
   const lower = query.toLowerCase();
+
+  const hasFeeWords = /\b(fee|fees|charge|charges|price|pricing|cost|rate|amount)\b/i.test(lower);
+  const hasPtWords = /\b(pt|personal training|trainer|coach|one on one|1:1|private training|personal coach)\b/i.test(lower);
+  const hasMembershipWords = /\b(membership|memberships|plan|plans|package|packages|month|months|quarterly|half yearly)\b/i.test(
+    lower
+  );
+
+  const isPtIntent = /\b(pt|personal training|one on one|1:1|private training|personal coach|pt plan|pt plans)\b/i.test(lower);
+  const isTimingIntent = /\b(timing|timings|time|batch|schedule|hours|morning|evening|slot|slots)\b/i.test(lower);
+  const isTrialIntent = /\b(trial|guest pass|free trial|2 day|2-day|demo)\b/i.test(lower);
+  const isMembershipIntent = /\b(membership|memberships|plan|plans|price|pricing|fee|fees|charges|cost|rate|monthly|quarterly|half yearly)\b/i.test(
+    lower
+  );
+
+  if (hasFeeWords && hasPtWords) return dynamicAnswers.personalTraining;
+  if (hasFeeWords && hasMembershipWords) return dynamicAnswers.membership;
+
+  if (isPtIntent) return dynamicAnswers.personalTraining;
+  if (isTimingIntent) return dynamicAnswers.timing;
+  if (isTrialIntent) return FREE_TRIAL_ANSWER;
+  if (isMembershipIntent) return dynamicAnswers.membership;
+
   let bestMatch = { score: 0, answer: "" };
 
   for (const faq of FAQ_DB) {
@@ -157,10 +252,75 @@ function TypingDots() {
   );
 }
 
+function renderMessageText(text: string): ReactNode[] {
+  const output: ReactNode[] = [];
+  const tokenRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/#(?:[^)\s]+)?)\)|(https?:\/\/[^\s]+)/g;
+
+  const pushPlain = (chunk: string, keyPrefix: string) => {
+    const lines = chunk.split("\n");
+    lines.forEach((line, lineIndex) => {
+      if (lineIndex > 0) {
+        output.push(<br key={`${keyPrefix}-br-${lineIndex}`} />);
+      }
+      if (line) {
+        output.push(<span key={`${keyPrefix}-txt-${lineIndex}`}>{line}</span>);
+      }
+    });
+  };
+
+  let cursor = 0;
+  let matchIndex = 0;
+  let match = tokenRegex.exec(text);
+
+  while (match) {
+    const [fullMatch, label, markdownHref, rawHref] = match;
+    const start = match.index;
+
+    if (start > cursor) {
+      pushPlain(text.slice(cursor, start), `plain-${matchIndex}`);
+    }
+
+    const href = markdownHref || rawHref;
+    const linkLabel = label || href;
+    const external = /^https?:\/\//i.test(href);
+    output.push(
+      <a
+        key={`link-${matchIndex}`}
+        href={href}
+        target={external ? "_blank" : undefined}
+        rel={external ? "noopener noreferrer" : undefined}
+        className="font-semibold text-brand-orange underline underline-offset-2 transition hover:text-orange-300"
+      >
+        {linkLabel}
+      </a>
+    );
+
+    cursor = start + fullMatch.length;
+    matchIndex += 1;
+    match = tokenRegex.exec(text);
+  }
+
+  if (cursor < text.length) {
+    pushPlain(text.slice(cursor), `tail-${matchIndex}`);
+  }
+
+  return output;
+}
+
 /* ─────────────────────────────────────────────
    Main FAQ Chat Section
 ───────────────────────────────────────────── */
-export default function FaqChatSection() {
+type FaqChatSectionProps = {
+  plans?: Plan[];
+  batchTimings?: BatchTimings;
+  personalTraining?: PersonalTraining;
+};
+
+export default function FaqChatSection({
+  plans = defaultPlans,
+  batchTimings = defaultBatchTimings,
+  personalTraining = defaultPersonalTraining,
+}: FaqChatSectionProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: _msgId++,
@@ -174,6 +334,15 @@ export default function FaqChatSection() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const dynamicAnswers: DynamicAnswerBundle = useMemo(
+    () => ({
+      membership: buildMembershipAnswer(plans),
+      timing: buildBatchTimingAnswer(batchTimings),
+      personalTraining: buildPersonalTrainingAnswer(personalTraining),
+    }),
+    [batchTimings, personalTraining, plans]
+  );
 
   // Scroll only within the chat box — never jumps the page
   useEffect(() => {
@@ -198,7 +367,7 @@ export default function FaqChatSection() {
       setIsTyping(true);
       setShowDots(true);
 
-      const answer = findAnswer(text);
+      const answer = findAnswer(text, dynamicAnswers);
 
       // Thinking delay — feels natural
       const thinkDelay = 600 + Math.random() * 400;
@@ -239,7 +408,7 @@ export default function FaqChatSection() {
         }, charDelay);
       }, thinkDelay);
     },
-    [isTyping]
+    [dynamicAnswers, isTyping]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -320,7 +489,7 @@ export default function FaqChatSection() {
                       : "rounded-bl-sm bg-zinc-800 text-white"
                   }`}
                 >
-                  {msg.text}
+                  {renderMessageText(msg.text)}
                   {/* Blinking cursor while streaming */}
                   {msg.typing && (
                     <span className="ml-0.5 inline-block h-[1em] w-0.5 align-middle bg-[#ff7d00]"

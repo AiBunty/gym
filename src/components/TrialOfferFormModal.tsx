@@ -58,11 +58,17 @@ export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps)
 
       if (result.ok) {
         setStatus("success");
-        setStatusMessage("Trial registration successful! Check your email for details.");
-        resetForm();
+        setStatusMessage(
+          "Thank you! Your 2-day trial is booked.\n\nPlease bring:\n• Clean indoor shoes\n• Comfortable workout clothing\n• Napkin or small towel\n• Water bottle\n\nSee you at the club!"
+        );
+        setName("");
+        setEmail("");
+        setPhone("");
+        setAge("");
+        setInterests("");
         setTimeout(() => {
           handleClose();
-        }, 2000);
+        }, 3200);
       } else {
         setStatus("error");
         setStatusMessage(result.message || "Failed to submit. Please try again.");
@@ -177,7 +183,7 @@ export default function TrialOfferFormModal({ isOpen, onClose }: TrialFormProps)
           </div>
 
           {status === "success" && (
-            <div className="rounded-lg bg-green-500/20 border border-green-500 px-3 py-2 text-sm text-green-300">
+            <div className="whitespace-pre-line rounded-lg border border-green-500 bg-green-500/20 px-3 py-2 text-sm text-green-300">
               {statusMessage}
             </div>
           )}
